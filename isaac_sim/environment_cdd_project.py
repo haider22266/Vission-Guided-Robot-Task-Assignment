@@ -33,6 +33,7 @@ def arguments():
     p.add_argument('--camera', choices=('fixed',), default='fixed', help='Fixed perspective view; no camera tracking')
     p.add_argument('--robot',type=int,choices=range(1,6),help='Run just one robot for review')
     p.add_argument('--tasks-per-robot',type=int,default=0,help='0: shared continuous floor cleanup; 1 or 2: original bounded role demo')
+    p.add_argument('--serial-cleanup',action='store_true',help='Optional one-at-a-time debugging mode; default is concurrent')
     p.add_argument('--exit-on-complete', action='store_true')
     p.add_argument('--report', type=Path, default=Path(__file__).with_name('scenes')/'environment_cdd_report.json')
     p.add_argument('--inspect-racks', action='store_true', help=argparse.SUPPRESS)
@@ -141,7 +142,10 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
-        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations
+        route_reservations=RouteReservations()
+        concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
+        motion_stats={'peak_moving_robots':0,'overlap_frames':0}
         cleanup_groups,unknown_components=floor_groups(list(stage.GetPrimAtPath('/World/DisasterAftermath/Props').GetChildren()))
         cleanup=CleanupQueue(cleanup_groups,unknown_components) if args.tasks_per_robot==0 else None
         cleanup_by_id={g['id']:g for g in cleanup_groups}
@@ -316,6 +320,23 @@ def main():
             # a passing peer as a permanent A* wall can trap both workers.
             return result
 
+        def navigation_radius(r):
+            radius=.70
+            if r.get('carrying') and r.get('item'):
+                lo,hi=bounds([r['item']])
+                p=pose(r['base'])[0]
+                radius=max(radius,max(float(np.linalg.norm(np.array([x,y])-p[:2]))
+                                      for x in (lo[0],hi[0]) for y in (lo[1],hi[1]))+.06)
+            return radius
+
+        def navigation_footprint(r):
+            footprint=[-.70,-.70,.70,.70]
+            if r.get('carrying') and r.get('item'):
+                lo,hi=bounds([r['item']]);p=pose(r['base'])[0]
+                footprint=[min(footprint[0],float(lo[0]-p[0]-.06)),min(footprint[1],float(lo[1]-p[1]-.06)),
+                           max(footprint[2],float(hi[0]-p[0]+.06)),max(footprint[3],float(hi[1]-p[1]+.06))]
+            return footprint
+
         def planner(r):
             rects = []
             bp, _ = pose(r['base'])
@@ -340,8 +361,16 @@ def main():
                 parked=(args.robot and other['id']!=args.robot) or other['state'] in (
                     'all_assigned_environment_tasks_complete','idle_no_more_reachable_original_props','cleanup_waiting',
                     'yield_cleanup_aisle_turn','yield_rear_pickup_zone_to_other_robot','yield_shared_left_rack_corridor','failed')
+                if concurrent_cleanup and not other.get('nav_active',False):parked=True
                 if not parked:continue
                 p,_=pose(other['base'])
+                if concurrent_cleanup:
+                    footprint=navigation_footprint(r)
+                    rects.append((p[0]-.70-footprint[2],p[0]+.70-footprint[0],p[1]-.70-footprint[3],p[1]+.70-footprint[1]))
+                    if other.get('carrying') and other.get('item'):
+                        olo,ohi=bounds([other['item']])
+                        rects.append((olo[0]-footprint[2]-.06,ohi[0]-footprint[0]+.06,olo[1]-footprint[3]-.06,ohi[1]-footprint[1]+.06))
+                    continue
                 lo,hi=p[:2]-[.48,.42],p[:2]+[.48,.42]
                 # Parked peers are static route obstacles. Match local traffic
                 # clearance, with a sub-millimetre boundary tolerance.
@@ -402,15 +431,65 @@ def main():
                     drive(r,command,r['yaw'])
                     yield
 
-        def navigate(r, goal, yaw=None):
-            yield from clear_initial_traffic_margin(r)
+        def reserve_navigation_route(r,route,goal):
+            route_reservations.release(r['id'],clock[0]/60)
+            r['nav_active']=False
+            original_state=r['state']
+            waiting=False
+            for attempt in range(600):
+                positions={other['id']:(pose(other['base'])[0][:2],.70) for other in records}
+                occupied=[]
+                for other in records:
+                    if other is not r and other.get('carrying') and other.get('item'):
+                        lo,hi=bounds([other['item']]);occupied.append((float(lo[0]-.06),float(lo[1]-.06),float(hi[0]+.06),float(hi[1]+.06)))
+                if route_reservations.reserve(r['id'],route,navigation_radius(r),positions,clock[0]/60,
+                    footprint=navigation_footprint(r),occupied_boxes=occupied,
+                    goal_radius=navigation_radius(r) if r.get('reservation_rotate') else None):
+                    r['nav_active']=True
+                    if waiting:event(r,original_state)
+                    return route
+                if not waiting:
+                    event(r,'yield_conflicting_route')
+                    waiting=True
+                drive(r,pose(r['base'])[0][:2],r['yaw'])
+                for _ in range(15):yield
+                if attempt%32==31:
+                    try:route=planner(r).plan(pose(r['base'])[0][:2],goal)
+                    except ValueError:pass
+            raise RuntimeError('Conflicting route did not become available')
+
+        def navigate(r,goal,yaw=None):
+            if not concurrent_cleanup:
+                yield from navigate_unreserved(r,goal,yaw)
+                return
+            try:
+                yield from clear_initial_traffic_margin(r)
+                r['reservation_rotate']=yaw is not None and abs((yaw-r['yaw']+math.pi)%(2*math.pi)-math.pi)>.02
+                route=None
+                for attempt in range(40):
+                    try:
+                        route=planner(r).plan(pose(r['base'])[0][:2],goal)
+                        break
+                    except ValueError:
+                        drive(r,pose(r['base'])[0][:2],r['yaw'])
+                        for _ in range(30):yield
+                if route is None:raise RuntimeError('No collision-clear route became available')
+                r['reserved_route']=yield from reserve_navigation_route(r,route,goal)
+                yield from navigate_unreserved(r,goal,yaw)
+            finally:
+                route_reservations.release(r['id'],clock[0]/60)
+                r['nav_active']=False
+                r.pop('reserved_route',None)
+
+        def navigate_unreserved(r, goal, yaw=None):
+            if not concurrent_cleanup:yield from clear_initial_traffic_margin(r)
             nav = planner(r)
             initial, _ = pose(r['base'])
             if not nav.free(initial[:2]) or not nav.free(goal):
                 print('NAV_CLEARANCE',r['id'],'start',initial[:2],nav.free(initial[:2]),'goal',goal,nav.free(goal),
                       'load',bounds([r['item']]) if r['item'] else None)
                 print('BLOCKING_RECTS',[rect for rect in nav.rectangles if rect[0]<=goal[0]<=rect[1] and rect[2]<=goal[1]<=rect[3]])
-            route = nav.plan(initial[:2],goal)
+            route = r.get('reserved_route') or nav.plan(initial[:2],goal)
             r['route'].append([list(p) for p in route])
             print('  Route:',len(route),'waypoints; goal:',tuple(round(float(x),2) for x in goal))
             last = initial[:2].copy()
@@ -457,6 +536,8 @@ def main():
                                 replacement=planner(r).plan(current[:2],goal)
                             except ValueError:
                                 continue
+                            if concurrent_cleanup:
+                                replacement=yield from reserve_navigation_route(r,replacement,goal)
                             route=replacement
                             index=1
                             r['route'].append([list(p) for p in route])
@@ -811,7 +892,7 @@ def main():
                     r['task']='Arrange '+cleanup.items[key]['kind']+': '+group[0].GetName()
                 reserved.update(r['selected_props'])
                 print('Selected ORIGINAL props:',r['selected_props'])
-                if cleanup is not None:
+                if cleanup is not None and args.serial_cleanup:
                     cleanup_transit.request(r['id'])
                     event(r,'yield_cleanup_aisle_turn')
                     while not cleanup_transit.enter(r['id']):yield
@@ -882,7 +963,7 @@ def main():
                 yield from navigate(r,front)
                 if cleanup is None and rear_zone_owner[0]==r['id']:
                     rear_zone_owner[0]=None
-                if '/Shelf_0/' in pallet_path:
+                if '/Shelf_0/' in pallet_path and not concurrent_cleanup:
                     yield from reserve_left_corridor(r,[r['home'][0],-8.7])
                 event(r,'navigate_to_assigned_existing_rack')
                 yield from navigate(r,depot,yaw=rack_yaw)
@@ -1051,11 +1132,21 @@ def main():
                     break
             if workers:
                 tick()
+                moving=0
+                for r in selected:
+                    current=pose(r['base'])[0][:2].copy()
+                    previous=r.get('motion_sample',r['home'][:2])
+                    if r.get('nav_active',False) and float(np.linalg.norm(current-previous))>.0005:
+                        moving+=1
+                        r.setdefault('first_motion_time',clock[0]/60)
+                    r['motion_sample']=current
+                motion_stats['peak_moving_robots']=max(motion_stats['peak_moving_robots'],moving)
+                if moving>1:motion_stats['overlap_frames']+=1
                 camera_unchanged &= UsdGeom.Xformable(camera).GetLocalTransformation()==camera_start
                 if cleanup is not None and clock[0]%60==0:
                     state=cleanup.summary()
                     if ui_cleanup_summary is not None:
-                        active='Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting'
+                        active=(','.join('%02d'%rid for rid in route_reservations.routes) or 'manipulating / waiting') if concurrent_cleanup else ('Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting')
                         ui_cleanup_summary.text='Floor cleanup | stored %d/%d | active: %s | pending %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,state['counts']['pending'],state['counts']['failed'])
                     if clock[0]%300==0:
                         args.report.parent.mkdir(parents=True,exist_ok=True)
@@ -1113,6 +1204,9 @@ def main():
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()
+        report['navigation']={'mode':'concurrent spatial route reservations and live local avoidance' if concurrent_cleanup else 'original/serial navigation',
+                              **motion_stats,'peak_reserved_routes':route_reservations.peak_active,
+                              'route_conflict_yields':route_reservations.denials,'route_events':route_reservations.events}
         if cleanup is not None:
             report['cleanup']=cleanup.summary()
             report['cleanup']['stop_reason']=cleanup_stop_reason or ('All registered objects stored' if report['cleanup']['floor_clean'] else

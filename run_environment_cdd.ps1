@@ -4,7 +4,7 @@ param(
     [string]$Model='', [string]$ClassifierPython='',
     [ValidateSet('auto','windows','wsl')][string]$ClassifierBackend='auto',
     [string]$ClassifierDistro='Ubuntu-22.04',
-    [switch]$Headless, [double]$Duration=0, [ValidateSet(0,1,2)][int]$TasksPerRobot=0, [switch]$ExitOnComplete
+    [switch]$Headless, [double]$Duration=0, [ValidateSet(0,1,2)][int]$TasksPerRobot=0, [switch]$Serial, [switch]$ExitOnComplete
 )
 $ErrorActionPreference='Stop'
 Set-Location -LiteralPath $PSScriptRoot
@@ -29,6 +29,7 @@ if ($PerceptionBackend -eq 'efficientnet') {
 }
 if ($ClassifierPython) { $runArgs+=@('--classifier-python',$ClassifierPython) }
 if ($Headless) { $runArgs+='--headless' }
+if ($Serial) { $runArgs+='--serial-cleanup' }
 if ($ExitOnComplete) { $runArgs+='--exit-on-complete' }
 & $runner @runArgs
 exit $LASTEXITCODE

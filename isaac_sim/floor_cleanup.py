@@ -1,5 +1,6 @@
 """Shared floor inventory and collision-free rack reservations (no Isaac imports)."""
 import uuid
+import math
 
 
 def floor_groups(prims):
@@ -133,3 +134,85 @@ class FairTripGate:
     def release(self,robot):
         if self.owner==robot:self.owner=None
         if robot in self.queue:self.queue.remove(robot)
+
+
+def _point_segment_distance(p,a,b):
+    dx,dy=b[0]-a[0],b[1]-a[1]
+    length=dx*dx+dy*dy
+    t=max(0.,min(1.,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/length)) if length else 0.
+    return math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy)
+
+
+def _segment_distance(a,b,c,d):
+    def cross(p,q,r):return (q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0])
+    # Intersection, including collinear overlapping segments.
+    if (cross(a,b,c)*cross(a,b,d)<=0 and cross(c,d,a)*cross(c,d,b)<=0
+            and max(min(a[0],b[0]),min(c[0],d[0]))<=min(max(a[0],b[0]),max(c[0],d[0]))
+            and max(min(a[1],b[1]),min(c[1],d[1]))<=min(max(a[1],b[1]),max(c[1],d[1]))):return 0.
+    return min(_point_segment_distance(a,c,d),_point_segment_distance(b,c,d),
+               _point_segment_distance(c,a,b),_point_segment_distance(d,a,b))
+
+
+def _segment_box(a,b,box):
+    low,high=0.,1.
+    for axis in (0,1):
+        delta=b[axis]-a[axis]
+        if abs(delta)<1e-12:
+            if not box[axis]<=a[axis]<=box[axis+2]:return False
+        else:
+            t0,t1=(box[axis]-a[axis])/delta,(box[axis+2]-a[axis])/delta
+            low=max(low,min(t0,t1));high=min(high,max(t0,t1))
+            if low>high:return False
+    return True
+
+
+class RouteReservations:
+    """Admit independent paths concurrently; conflicting swept paths yield.
+
+    Radius encloses the base and carried load in XY, including goal rotations.
+    This coordinates planned routes; the live local collision check remains active.
+    """
+    def __init__(self):
+        self.routes={}
+        self.peak_active=0
+        self.denials=0
+        self.events=[]
+
+    def reserve(self,robot,path,radius,positions,time=0.,footprint=None,occupied_boxes=(),goal_radius=None):
+        points=[tuple(float(v) for v in p[:2]) for p in path]
+        if not points or any(len(p)!=2 or not all(math.isfinite(v) for v in p) for p in points) or not math.isfinite(radius) or radius<=0:
+            raise ValueError('Invalid reserved path')
+        if len(points)==1:points*=2
+        segments=list(zip(points,points[1:]))
+        for other,entry in self.routes.items():
+            if other==robot:continue
+            if any(_segment_distance(a,b,c,d)<radius+entry['radius']-.001
+                   for a,b in segments for c,d in zip(entry['path'],entry['path'][1:])):
+                self.denials+=1
+                return False
+        for other,(point,other_radius) in positions.items():
+            if other==robot or other in self.routes:continue
+            if footprint is not None:
+                box=(point[0]-other_radius-footprint[2],point[1]-other_radius-footprint[3],
+                     point[0]+other_radius-footprint[0],point[1]+other_radius-footprint[1])
+                conflict=any(_segment_box(a,b,box) for a,b in segments)
+            else:conflict=any(_point_segment_distance(point,a,b)<radius+other_radius-.001 for a,b in segments)
+            if goal_radius and math.dist(points[-1],point)<goal_radius+other_radius:conflict=True
+            if conflict:
+                self.denials+=1
+                return False
+        if footprint is not None:
+            for occupied in occupied_boxes:
+                box=(occupied[0]-footprint[2],occupied[1]-footprint[3],occupied[2]-footprint[0],occupied[3]-footprint[1])
+                if any(_segment_box(a,b,box) for a,b in segments):
+                    self.denials+=1
+                    return False
+        self.routes[robot]={'path':points,'radius':radius}
+        self.peak_active=max(self.peak_active,len(self.routes))
+        self.events.append({'robot':robot,'event':'route_reserved','time':time,'active_routes':len(self.routes)})
+        return True
+
+    def release(self,robot,time=0.):
+        if robot in self.routes:
+            del self.routes[robot]
+            self.events.append({'robot':robot,'event':'route_released','time':time,'active_routes':len(self.routes)})

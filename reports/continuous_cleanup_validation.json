@@ -24,6 +24,10 @@
       "stop_reason": "Simulation limit, failed controller or unresolved objects",
       "camera_samples": {
         "2": 244
+      },
+      "navigation": null,
+      "first_motion_at_s": {
+        "Robot_02": 0.26666666666666666
       }
     },
     {
@@ -74,8 +78,262 @@
         "3": 138,
         "4": 138,
         "5": 138
+      },
+      "navigation": null,
+      "first_motion_at_s": {
+        "Robot_01": 105.43333333333334,
+        "Robot_02": null,
+        "Robot_03": 232.83333333333334,
+        "Robot_04": 0.016666666666666666,
+        "Robot_05": 341.6666666666667
+      }
+    },
+    {
+      "test": "concurrent_cleanup_test",
+      "simulated_seconds": 110.0,
+      "perception_backend": "mock",
+      "camera_unchanged": true,
+      "registered_objects": 88,
+      "floor_clean": false,
+      "counts": {
+        "pending": 84,
+        "assigned": 0,
+        "stored": 3,
+        "failed": 1
+      },
+      "verified_still_stored": 3,
+      "robots": [
+        {
+          "robot": "Robot_01",
+          "completed_jobs": 1,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_02",
+          "completed_jobs": 1,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_03",
+          "completed_jobs": 0,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_04",
+          "completed_jobs": 1,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_05",
+          "completed_jobs": 0,
+          "failure": "Simulation closed or maximum duration exceeded"
+        }
+      ],
+      "stop_reason": "Simulation limit, failed controller or unresolved objects",
+      "camera_samples": {
+        "1": 103,
+        "2": 103,
+        "3": 103,
+        "4": 103,
+        "5": 103
+      },
+      "navigation": {
+        "mode": "concurrent spatial route reservations and live local avoidance",
+        "peak_moving_robots": 3,
+        "overlap_frames": 5604,
+        "peak_reserved_routes": 3,
+        "route_conflict_yields": 1035,
+        "route_events": [
+          {
+            "robot": 4,
+            "event": "route_reserved",
+            "time": 0.0,
+            "active_routes": 1
+          },
+          {
+            "robot": 1,
+            "event": "route_reserved",
+            "time": 0.016666666666666666,
+            "active_routes": 2
+          },
+          {
+            "robot": 2,
+            "event": "route_reserved",
+            "time": 0.25,
+            "active_routes": 3
+          },
+          {
+            "robot": 2,
+            "event": "route_released",
+            "time": 7.083333333333333,
+            "active_routes": 2
+          },
+          {
+            "robot": 2,
+            "event": "route_reserved",
+            "time": 15.366666666666667,
+            "active_routes": 3
+          },
+          {
+            "robot": 2,
+            "event": "route_released",
+            "time": 18.383333333333333,
+            "active_routes": 2
+          },
+          {
+            "robot": 4,
+            "event": "route_released",
+            "time": 28.733333333333334,
+            "active_routes": 1
+          },
+          {
+            "robot": 3,
+            "event": "route_reserved",
+            "time": 28.766666666666666,
+            "active_routes": 2
+          },
+          {
+            "robot": 1,
+            "event": "route_released",
+            "time": 33.3,
+            "active_routes": 1
+          },
+          {
+            "robot": 2,
+            "event": "route_reserved",
+            "time": 33.38333333333333,
+            "active_routes": 2
+          },
+          {
+            "robot": 3,
+            "event": "route_released",
+            "time": 48.8,
+            "active_routes": 1
+          },
+          {
+            "robot": 2,
+            "event": "route_released",
+            "time": 50.666666666666664,
+            "active_routes": 0
+          },
+          {
+            "robot": 1,
+            "event": "route_reserved",
+            "time": 50.766666666666666,
+            "active_routes": 1
+          },
+          {
+            "robot": 4,
+            "event": "route_reserved",
+            "time": 54.88333333333333,
+            "active_routes": 2
+          },
+          {
+            "robot": 2,
+            "event": "route_reserved",
+            "time": 58.71666666666667,
+            "active_routes": 3
+          },
+          {
+            "robot": 2,
+            "event": "route_released",
+            "time": 60.0,
+            "active_routes": 2
+          },
+          {
+            "robot": 1,
+            "event": "route_released",
+            "time": 77.3,
+            "active_routes": 1
+          },
+          {
+            "robot": 1,
+            "event": "route_reserved",
+            "time": 77.3,
+            "active_routes": 2
+          },
+          {
+            "robot": 4,
+            "event": "route_released",
+            "time": 83.1,
+            "active_routes": 1
+          },
+          {
+            "robot": 4,
+            "event": "route_reserved",
+            "time": 83.1,
+            "active_routes": 2
+          },
+          {
+            "robot": 4,
+            "event": "route_released",
+            "time": 98.05,
+            "active_routes": 1
+          },
+          {
+            "robot": 3,
+            "event": "route_reserved",
+            "time": 98.26666666666667,
+            "active_routes": 2
+          },
+          {
+            "robot": 1,
+            "event": "route_released",
+            "time": 100.25,
+            "active_routes": 1
+          },
+          {
+            "robot": 2,
+            "event": "route_reserved",
+            "time": 100.25,
+            "active_routes": 2
+          },
+          {
+            "robot": 5,
+            "event": "route_reserved",
+            "time": 104.01666666666667,
+            "active_routes": 3
+          },
+          {
+            "robot": 3,
+            "event": "route_released",
+            "time": 108.26666666666667,
+            "active_routes": 2
+          },
+          {
+            "robot": 1,
+            "event": "route_reserved",
+            "time": 108.3,
+            "active_routes": 3
+          },
+          {
+            "robot": 1,
+            "event": "route_released",
+            "time": 109.58333333333333,
+            "active_routes": 2
+          },
+          {
+            "robot": 2,
+            "event": "route_released",
+            "time": 110.0,
+            "active_routes": 1
+          },
+          {
+            "robot": 5,
+            "event": "route_released",
+            "time": 110.0,
+            "active_routes": 0
+          }
+        ]
+      },
+      "first_motion_at_s": {
+        "Robot_01": 0.03333333333333333,
+        "Robot_02": 0.26666666666666666,
+        "Robot_03": 28.783333333333335,
+        "Robot_04": 0.016666666666666666,
+        "Robot_05": 104.03333333333333
       }
     }
   ],
-  "interpretation": "The single-robot run verified three successive stored objects, then encountered a lift/arm tracking failure on a later object. The five-robot learned-camera run was limited to 400 simulated seconds and did not finish the floor. These tests verify repeated work and safe incomplete reporting; they do not demonstrate full cleanup of all 88 objects."
+  "interpretation": "The single-robot run verified three successive stored objects, then encountered a lift/arm tracking failure on a later object. The five-robot learned-camera run was limited to 400 simulated seconds and did not finish the floor. The concurrent-navigation run uses explicit mock perception to isolate motion testing and measures actual overlapping navigation. These tests verify repeated work, concurrency and incomplete reporting; they do not demonstrate full cleanup of all 88 objects."
 }

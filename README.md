@@ -9,6 +9,9 @@ retains object reservations, navigation, contact checks and assisted rack placem
 The default now uses a [continuous shared cleanup queue](CONTINUOUS_CLEANUP.md)
 instead of a two-object-per-robot limit. The controller reserves free rack
 footprints and keeps requesting work, reporting unresolved objects explicitly.
+Workers run concurrently, with spatial route reservations and live local
+avoidance. Only conflicting navigation paths yield; there is no global
+one-robot-at-a-time gate in the default mode.
 This uses a priority baseline; it does not run QMIX or learned role switching.
 The separate ROS 2 implementation and policy
 interface are described in [ROS2_PIPELINE.md](ROS2_PIPELINE.md).

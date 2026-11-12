@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from floor_cleanup import CleanupQueue,floor_groups,FairTripGate
+from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations
 
 
 def groups():
@@ -90,6 +90,42 @@ def test_fifo_aisle_turns_prevent_head_on_trips_and_starvation():
     assert gate.owner==2
     gate.release(2)
     assert gate.enter(1)
+
+
+def test_independent_routes_move_together_and_crossing_route_waits():
+    routes=RouteReservations()
+    assert routes.reserve(1,[(0,0),(5,0)],.5,{})
+    assert routes.reserve(2,[(0,3),(5,3)],.5,{})
+    assert routes.peak_active==2
+    assert not routes.reserve(3,[(2,-2),(2,5)],.5,{})
+    assert 3 not in routes.routes
+    routes.release(1)
+    routes.release(2)
+    assert routes.reserve(3,[(2,-2),(2,5)],.5,{})
+
+
+@pytest.mark.parametrize('path',[[[5,0],[0,0]],[[2,0],[8,0]],[[2,-2],[2,2]]])
+def test_route_reservations_prevent_head_on_overlap_and_crossings(path):
+    routes=RouteReservations()
+    assert routes.reserve(1,[(0,0),(5,0)],.6,{})
+    assert not routes.reserve(2,path,.6,{})
+
+
+def test_route_reservations_include_stationary_peers_and_load_radius():
+    routes=RouteReservations()
+    assert not routes.reserve(1,[(0,0),(5,0)],.6,{2:((3,0),.6)})
+    assert routes.reserve(1,[(0,0),(5,0)],.6,{2:((3,3),.6)})
+    assert not routes.reserve(2,[(0,2),(5,2)],1.6,{})
+
+
+def test_long_narrow_load_uses_its_shape_near_stationary_robots():
+    routes=RouteReservations()
+    positions={2:((1.5,3),.2)}
+    assert not routes.reserve(1,[(0,0),(0,5)],2.1,positions)
+    assert routes.reserve(1,[(0,0),(0,5)],2.1,positions,footprint=(-.5,-2,.5,2))
+    routes.release(1)
+    assert not routes.reserve(1,[(0,0),(0,5)],2.1,{2:((.4,3),.2)},footprint=(-.5,-2,.5,2))
+    with pytest.raises(ValueError):routes.reserve(1,[(float('nan'),0)],.7,{})
 
 
 def test_compound_props_are_one_job_and_all_floor_categories_are_seen():

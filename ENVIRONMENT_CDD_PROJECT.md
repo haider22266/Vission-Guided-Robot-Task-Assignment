@@ -19,6 +19,9 @@ The default now uses continuous floor cleanup (`-TasksPerRobot 0`) rather than
 stopping after two objects per robot. See [CONTINUOUS_CLEANUP.md](CONTINUOUS_CLEANUP.md)
 for queue behavior, rack reservations and remaining-work reports. Pass
 `-TasksPerRobot 2 -Duration 600` to reproduce the earlier bounded role demo.
+All five workers run concurrently by default. Navigation reservations only
+delay conflicting routes; local obstacle and peer/load avoidance remain active.
+The optional `-Serial` flag is for one-at-a-time debugging.
 
 The default is **trained EfficientNet perception**, using
 `models/cdd/efficientnet_cdd.keras` and the isolated `.venv-cdd-wsl` TensorFlow

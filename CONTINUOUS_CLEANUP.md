@@ -23,11 +23,21 @@ The existing controller approaches, aligns, verifies contact, performs its
 assisted grasp/lift, carries, places and releases the object. It checks support
 and settling, then backs out and requests another job. Completed objects stay
 on the racks. Queue progress causes previously blocked pending jobs to be
-reconsidered. A FIFO gate reserves the shared travel aisles for one complete
-pickup/storage/return trip at a time. Other robots wait at their separate home
-positions, avoiding opposing carried loads in narrow aisles. This favors
-reliable cleanup over simultaneous travel; the older bounded demo retains its
-concurrent workers.
+reconsidered. Robots now work **concurrently by default**. Independent routes
+can run at the same time, and one robot can manipulate an object while others
+travel. A spatial reservation encloses each navigation path, robot and carried
+load. A conflicting path yields until space becomes available; reaching a goal
+releases that navigation reservation, without waiting for the whole task to end.
+Stationary peers, shelves, floor clutter and stored objects remain planning
+obstacles. The live per-frame peer/load overlap check and local avoidance remain
+active. The viewport camera stays fixed.
+
+This is a conservative spatial route coordinator, not Nav2 or a proven
+collision-free controller. Conflicting routes may wait even if they could be
+used at different times. Real Isaac physics tests are still necessary for
+complete cleanup, narrow passages and changing carried-load geometry.
+`-Serial` explicitly enables the former one-trip-at-a-time debugging mode;
+omit it for normal concurrent operation.
 The camera classifier only ranks worker scheduling; USD object registration
 supplies target locations. Whole-image classification does not locate objects.
 
@@ -60,11 +70,20 @@ an assisted-grasp simulation controller and a priority baseline, not QMIX.
 The earlier seven-placement result in `reports/` belongs to the bounded role
 demo. It is not evidence that all 88 objects were cleaned by continuous mode.
 
-Validation: 58 automated tests pass, including exclusive object/footprint
-reservations, more than two jobs, retry-after-progress and FIFO aisle turns.
+Validation: automated tests cover exclusive object/footprint reservations,
+more than two jobs, retry-after-progress, independent concurrent routes,
+crossing/head-on path conflicts, stationary peers and carried-load clearance.
 An Isaac single-robot run verified three successive stored objects; a later
 pickup encountered an arm-tracking failure. A five-robot run with learned
 camera inference verified three stored objects before its 400-second simulated
 time limit. Its fixed camera remained unchanged. Neither run cleaned all 88
 objects. See `reports/continuous_cleanup_validation.json` for the measured
-results and incomplete-work counts. Full cleanup remains unverified.
+results and incomplete-work counts. Those earlier tests used serial travel.
+Concurrent navigation measurements are saved in the newer run's `navigation`
+section: `peak_moving_robots`, `overlap_frames`, `peak_reserved_routes`, and
+time-stamped reservation events. In the 110-second concurrent test, all five
+robots started navigation; peak simultaneous moving robots was three, with
+5,604 overlapping-motion physics frames. Three objects remained verified on
+racks. This motion test used explicit mock perception; the learned classifier
+connection was verified in the earlier separate run. All 64 automated tests
+pass. Full cleanup remains unverified.
