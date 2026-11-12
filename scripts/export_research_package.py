@@ -48,7 +48,7 @@ def main():
             failure=robot.get('failure')))
         for index,job in enumerate(jobs):
             contact=job.get('contact_check',{})
-            placement_rows.append(dict(robot=robot['robot'],task=robot['task'],job_index=index,
+            placement_rows.append(dict(robot=robot['robot'],task=job.get('object_kind') or robot['task'],job_index=index,
                 source_props=';'.join(job['source_props']),rack_path=job['rack_path'],still_stored=job.get('still_stored'),
                 completed_at_sim_s=completions[index] if index<len(completions) else None,
                 contact_verified=contact.get('verified'),max_visible_gap_m=max(contact.get('visible_gaps_m',[0.])),
@@ -80,6 +80,8 @@ def main():
                                 **dict(zip(classes,row['probabilities']))))
     table('classifier_test_predictions.csv',predictions,['image','ground_truth','predicted_class']+classes)
     task_table='\n'.join(f"| {r['robot']} | {r['task']} | {r['completed_jobs']} | {r['stored_jobs']} | {r['success']} |" for r in robot_rows)
+    request_description=('Continuous shared cleanup, without a per-robot object limit.' if report.get('cleanup') else
+                         f"Each routine requests up to {report['requested_max_tasks_per_robot']} objects; a routine can stop when no reachable candidate remains.")
     summary=f'''Recorded results snapshot: {timestamp.isoformat(timespec='seconds')} (Asia/Tokyo).
 
 Classifier: EfficientNetB0 trained on CDD. Held-out test images: {metrics['test_images']}.
@@ -93,7 +95,8 @@ Isaac Sim recorded duration: {report['simulated_seconds']} simulated seconds.
 Fixed viewport camera unchanged: {report['camera_unchanged']}.
 Successful robot routines: {sum(bool(r['success']) for r in robot_rows)}/{len(robot_rows)}.
 Completed object placements: {len(placement_rows)}; verified still stored: {sum(bool(j['still_stored']) for j in placement_rows)}.
-Each routine requests up to {report['requested_max_tasks_per_robot']} objects; a routine can stop when no reachable candidate remains.
+{request_description}
+Full floor clean: {report.get('cleanup',{}).get('floor_clean','Not measured in this bounded-role experiment')}.
 
 | Robot | Task | Completed placements | Still stored | Routine success |
 | --- | --- | ---: | ---: | --- |

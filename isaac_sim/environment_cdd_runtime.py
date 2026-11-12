@@ -21,6 +21,7 @@ class SceneResearchRuntime:
         self.sensors={}
         self.products=[]
         self.backend=args.perception_backend
+        self.continuous=args.tasks_per_robot==0
         self.last=-10.
         self.process=None
         self.future=None
@@ -55,7 +56,8 @@ class SceneResearchRuntime:
             self.process=subprocess.Popen(command,
                 stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True,encoding='utf-8',bufsize=1)
         print('CDD integration: same stage; mounted cameras; '+self.backend+
-              ' perception; role-constrained priority baseline (not QMIX)',flush=True)
+              (' perception; continuous shared cleanup queue (not QMIX)' if self.continuous else
+               ' perception; role-constrained priority baseline (not QMIX)'),flush=True)
 
     def classify(self,rid,rgb,simulation_time):
         if self.backend=='mock':
@@ -105,12 +107,14 @@ class SceneResearchRuntime:
         return .5+.5*max(result.get('hazard_risk',0.),result.get('rescue_signal',0.))
 
     def summary(self):
-        return {'perception_backend':self.backend,'allocator':'role-constrained priority baseline; not QMIX',
+        return {'perception_backend':self.backend,'allocator':('priority-ordered shared cleanup queue; not QMIX' if self.continuous
+                    else 'role-constrained priority baseline; not QMIX'),
                 'same_stage':True,'camera_frames':self.frames,'latest_area_clues':self.results,
                 'priorities':{rid:self.priority(rid) for rid in self.records},
                 'vision_log':str(self.log_path),
                 'association':'Mounted robot camera -> current robot work area; no object or person localization',
-                'limitations':'Original robot/object/rack roles retained. No cross-role reassignment or ROS interface in this entry point.'}
+                'limitations':('Shared cleanup assigns original floor props to available identical manipulators; not a learned role-switching policy. No ROS interface.'
+                    if self.continuous else 'Original robot/object/rack roles retained. No cross-role reassignment or ROS interface in this entry point.')}
 
     def close(self):
         if self.process is not None:

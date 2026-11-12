@@ -1,0 +1,81 @@
+{
+  "tests": [
+    {
+      "test": "continuous_cleanup_single_test",
+      "simulated_seconds": 260.733,
+      "perception_backend": "mock",
+      "camera_unchanged": true,
+      "registered_objects": 88,
+      "floor_clean": false,
+      "counts": {
+        "pending": 84,
+        "assigned": 0,
+        "stored": 3,
+        "failed": 1
+      },
+      "verified_still_stored": 3,
+      "robots": [
+        {
+          "robot": "Robot_02",
+          "completed_jobs": 3,
+          "failure": "Arm tracking timeout in contact_verified_assisted_grasp; error 0.093 m"
+        }
+      ],
+      "stop_reason": "Simulation limit, failed controller or unresolved objects",
+      "camera_samples": {
+        "2": 244
+      }
+    },
+    {
+      "test": "continuous_cleanup_fleet_test",
+      "simulated_seconds": 400.0,
+      "perception_backend": "efficientnet",
+      "camera_unchanged": true,
+      "registered_objects": 88,
+      "floor_clean": false,
+      "counts": {
+        "pending": 84,
+        "assigned": 0,
+        "stored": 3,
+        "failed": 1
+      },
+      "verified_still_stored": 3,
+      "robots": [
+        {
+          "robot": "Robot_01",
+          "completed_jobs": 1,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_02",
+          "completed_jobs": 0,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_03",
+          "completed_jobs": 1,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_04",
+          "completed_jobs": 1,
+          "failure": "Simulation closed or maximum duration exceeded"
+        },
+        {
+          "robot": "Robot_05",
+          "completed_jobs": 0,
+          "failure": "Simulation closed or maximum duration exceeded"
+        }
+      ],
+      "stop_reason": "Simulation limit, failed controller or unresolved objects",
+      "camera_samples": {
+        "1": 138,
+        "2": 138,
+        "3": 138,
+        "4": 138,
+        "5": 138
+      }
+    }
+  ],
+  "interpretation": "The single-robot run verified three successive stored objects, then encountered a lift/arm tracking failure on a later object. The five-robot learned-camera run was limited to 400 simulated seconds and did not finish the floor. These tests verify repeated work and safe incomplete reporting; they do not demonstrate full cleanup of all 88 objects."
+}

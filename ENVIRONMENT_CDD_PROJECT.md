@@ -15,6 +15,11 @@ Run from this workspace in PowerShell:
 powershell.exe -ExecutionPolicy Bypass -File .\run_environment_cdd.ps1
 ```
 
+The default now uses continuous floor cleanup (`-TasksPerRobot 0`) rather than
+stopping after two objects per robot. See [CONTINUOUS_CLEANUP.md](CONTINUOUS_CLEANUP.md)
+for queue behavior, rack reservations and remaining-work reports. Pass
+`-TasksPerRobot 2 -Duration 600` to reproduce the earlier bounded role demo.
+
 The default is **trained EfficientNet perception**, using
 `models/cdd/efficientnet_cdd.keras` and the isolated `.venv-cdd-wsl` TensorFlow
 environment. The model was trained from the supplied CDD images; the dataset
@@ -57,10 +62,11 @@ The adapter associates each camera's whole image with its robot's current work
 area. Hazard or Human Damage scores increase its worker scheduling priority
 from 0.5 toward 1.0. Higher-priority workers issue commands first within each
 shared physics frame, while the original controller retains its corridor,
-object and rack reservations. This is a **role-constrained priority baseline**:
-it does not change the original robot/object role assignment or run QMIX.
+object and rack reservations. This is a **priority baseline**, not QMIX.
+Continuous mode first prefers each robot's original task family, then lets
+idle robots take other available objects from the shared cleanup queue.
 It is separate from the ROS 2 nodes in `ROS2_PIPELINE.md`; this entry point
-does not yet expose ROS control, cross-role reassignment or a failure monitor.
+does not yet expose ROS control, learned role switching or a failure monitor.
 Human Damage is an area clue, not a localized person detection, and visual
 scores do not constitute object-specific evidence or a verified safe route.
 

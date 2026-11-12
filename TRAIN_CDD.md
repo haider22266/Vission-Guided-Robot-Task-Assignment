@@ -57,7 +57,8 @@ pass `-PerceptionBackend mock`.
 
 The five mounted cameras stay in the original Isaac stage and send live RGB
 frames to the model. Predictions are whole-image work-area clues. Human Damage
-does not localize a person. The current role-constrained worker scheduler
+does not localize a person. The current priority worker scheduler
 uses the risk scores, while existing object/rack reservations, navigation,
 grasp and placement verification remain in control. This does not enable
-QMIX or cross-role task reassignment.
+QMIX or learned role switching. See `CONTINUOUS_CLEANUP.md` for the shared
+object queue used by the default continuous-cleanup mode.

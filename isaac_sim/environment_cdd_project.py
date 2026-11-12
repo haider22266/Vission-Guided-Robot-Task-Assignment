@@ -28,11 +28,11 @@ def arguments():
     p.add_argument('--classifier-wsl',action='store_true')
     p.add_argument('--classifier-distro',default='Ubuntu-22.04')
     p.add_argument('--headless', action='store_true')
-    p.add_argument('--duration', type=float, default=600, help='Maximum simulated seconds for all tasks')
+    p.add_argument('--duration', type=float, default=0, help='Simulated time limit; 0 means until cleanup stops (GUI only)')
     p.add_argument('--speed', type=float, default=.8, help='Base speed in meters per second')
     p.add_argument('--camera', choices=('fixed',), default='fixed', help='Fixed perspective view; no camera tracking')
     p.add_argument('--robot',type=int,choices=range(1,6),help='Run just one robot for review')
-    p.add_argument('--tasks-per-robot',type=int,choices=(1,2),default=2,help='Different original props per robot; completed props stay on separate rack pallets')
+    p.add_argument('--tasks-per-robot',type=int,default=0,help='0: shared continuous floor cleanup; 1 or 2: original bounded role demo')
     p.add_argument('--exit-on-complete', action='store_true')
     p.add_argument('--report', type=Path, default=Path(__file__).with_name('scenes')/'environment_cdd_report.json')
     p.add_argument('--inspect-racks', action='store_true', help=argparse.SUPPRESS)
@@ -42,8 +42,10 @@ def arguments():
         p.error('EfficientNet mode requires --efficientnet-model pointing to trained CDD weights')
     if not args.scene.is_file():
         p.error('Scene not found: ' + str(args.scene))
-    if args.duration <= 0 or not 0 < args.speed <= 1.5:
-        p.error('Use positive --duration and 0 < --speed <= 1.5')
+    if not math.isfinite(args.duration) or args.duration<0 or not 0 < args.speed <= 1.5 or args.tasks_per_robot not in (0,1,2):
+        p.error('Use nonnegative finite --duration, tasks-per-robot 0/1/2, and 0 < --speed <= 1.5')
+    if args.headless and args.duration==0:p.error('Headless execution needs a positive --duration')
+    args.duration=args.duration or math.inf
     return args
 
 
@@ -139,6 +141,11 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate
+        cleanup_groups,unknown_components=floor_groups(list(stage.GetPrimAtPath('/World/DisasterAftermath/Props').GetChildren()))
+        cleanup=CleanupQueue(cleanup_groups,unknown_components) if args.tasks_per_robot==0 else None
+        cleanup_by_id={g['id']:g for g in cleanup_groups}
+        cleanup_pallets=[]
         tasks = [job['task'] for job in environment_jobs]
         records = []
         for i, name in enumerate(tasks, 1):
@@ -170,12 +177,14 @@ def main():
         props = stage.GetPrimAtPath('/World/DisasterAftermath/Props')
         contact_paths=[str(p.GetPath()) for p in props.GetChildren() if p.HasAPI(UsdPhysics.CollisionAPI)]
         ui_labels={}
+        ui_cleanup_summary=None
         if not args.headless:
             import omni.ui as ui
             task_window=ui.Window('Existing warehouse object tasks',width=700,height=370)
             with task_window.frame:
                 with ui.VStack(spacing=8):
-                    ui.Label('Existing props | contact-verified assisted grasp',height=25)
+                    ui_cleanup_summary=ui.Label('Continuous floor cleanup | verified grasp and rack placement' if cleanup is not None
+                                                else 'Existing props | contact-verified assisted grasp',height=25)
                     for r in records:
                         ui_labels[r['id']]=ui.Label('Robot %02d | %s | waiting'%(r['id'],r['task']),height=52,word_wrap=True)
         for r in records:
@@ -189,6 +198,21 @@ def main():
             if not pallet:raise RuntimeError('Missing original destination pallet')
             UsdPhysics.CollisionAPI.Apply(pallet).CreateCollisionEnabledAttr(True)
             UsdPhysics.MeshCollisionAPI.Apply(pallet).CreateApproximationAttr('convexHull')
+        if cleanup is not None:
+            for prim in stage.Traverse():
+                path=str(prim.GetPath())
+                if path.startswith('/Root/Shelf_') and prim.GetName()=='SM_PaletteA_01' and prim.IsA(UsdGeom.Mesh):
+                    lo,hi=bounds([prim])
+                    if lo[2]<.5 and hi[2]<.65:
+                        UsdPhysics.CollisionAPI.Apply(prim).CreateCollisionEnabledAttr(True)
+                        UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr('convexHull')
+                        cleanup_pallets.append({'path':path,'lo':lo.copy(),'hi':hi.copy()})
+                if path.startswith('/Root/') and prim.IsA(UsdGeom.Mesh) and any(s in path for s in ('CardBox','KLT','Crate')):
+                    lo,hi=bounds([prim])
+                    if lo[2]<1.3 and hi[2]>.45:
+                        cleanup.static_occupancy.append((float(lo[0]),float(lo[1]),float(hi[0]),float(hi[1])))
+            print('CONTINUOUS CLEANUP:',len(cleanup_groups),'objects;',len(cleanup_pallets),'original low rack pallets;',
+                  'unregistered components:',unknown_components,flush=True)
         world = World(physics_dt=1/60, rendering_dt=1/60, stage_units_in_meters=1)
         # Ensure USD queries see current physics poses, including attachment frames.
         physics = world.get_physics_context()
@@ -314,7 +338,8 @@ def main():
             for other in records:
                 if other is r:continue
                 parked=(args.robot and other['id']!=args.robot) or other['state'] in (
-                    'all_assigned_environment_tasks_complete','idle_no_more_reachable_original_props','failed')
+                    'all_assigned_environment_tasks_complete','idle_no_more_reachable_original_props','cleanup_waiting',
+                    'yield_cleanup_aisle_turn','yield_rear_pickup_zone_to_other_robot','yield_shared_left_rack_corridor','failed')
                 if not parked:continue
                 p,_=pose(other['base'])
                 lo,hi=p[:2]-[.48,.42],p[:2]+[.48,.42]
@@ -495,10 +520,14 @@ def main():
         def choose(r,groups):
             current,_ = pose(r['base'])
             nav = planner(r)
+            r['selection_nav']=nav
             options = []
             best_cost=math.inf
             groups=sorted(groups,key=lambda g:np.linalg.norm(((sum(bounds(g)))/2)[:2]-current[:2]))
-            for group in groups:
+            for group_index,group in enumerate(groups):
+                if group_index and group_index%2==0:yield
+                if cleanup is not None and cleanup.items[str(group[0].GetPath())]['state']!='pending':continue
+                if cleanup is not None:r['candidate_kind']=cleanup_by_id[str(group[0].GetPath())]['kind']
                 lo,hi = bounds(group)
                 middle = (lo+hi)/2
                 primary=group[0]
@@ -521,6 +550,17 @@ def main():
                         continue
                     if not nav.free(dock):
                         continue
+                    if cleanup is not None:
+                        import omni.physx
+                        query=omni.physx.get_physx_scene_query_interface()
+                        overhead=False
+                        for dx,dy in ((0,0),(.04,0),(-.04,0),(0,.04),(0,-.04)):
+                            hit=query.raycast_closest((float(point[0]+dx),float(point[1]+dy),float(point[2]+.015)),(0.,0.,1.),.12)
+                            if hit['hit'] and not any(str(hit.get(k,'')).startswith(str(p.GetPath()))
+                                    for k in ('rigidBody','collision') for p in group):
+                                overhead=True
+                                break
+                        if overhead:continue
                     direction=np.array([math.cos(yaw),math.sin(yaw)])
                     carry=np.array([*(np.array(dock)+.52*direction),max(.85,point[2]+.15)])
                     shoulder_xy=np.array(dock)+.30*np.array([math.cos(yaw),math.sin(yaw)])
@@ -536,7 +576,11 @@ def main():
                         continue
                     cost = sum(math.dist(a,b) for a,b in zip(route,route[1:]))
                     best_cost=min(best_cost,cost)
-                    options.append((cost,group,np.array(dock),np.array(point),carry,yaw))
+                    options.append((cost,group,np.array(dock),np.array(point),carry,yaw,
+                                    dict(r['candidate_rack_slot']) if cleanup is not None else None))
+            if cleanup is not None:
+                options=[option for option in options if cleanup.items[str(option[1][0].GetPath())]['state']=='pending'
+                         and cleanup.slot_free(option[6]['box'])]
             if not options:
                 raise RuntimeError('No reachable floor object with a collision-clear docking pose')
             return min(options,key=lambda entry:entry[0])
@@ -584,7 +628,9 @@ def main():
         stored_props=[]
         rear_zone_owner=[None]
         left_corridor_owner=[1 if not args.robot or args.robot==1 else None]
+        if cleanup is not None:left_corridor_owner[0]=None
         left_corridor_queue=[]
+        cleanup_transit=FairTripGate()
 
         def visible_gaps(r,group):
             gaps=[]
@@ -651,6 +697,51 @@ def main():
 
         def rack_ik_available(r,grip,source_yaw,source_lo,source_hi):
             """A task is available only if its original prop can also be placed."""
+            if cleanup is not None:
+                half=(source_hi-source_lo)/2
+                preferred={rack_specs[r['id']][0],next_rack_specs[r['id']][0]}
+                for pallet in sorted(cleanup_pallets,key=lambda p:p['path'] not in preferred):
+                    plo,phi=pallet['lo'],pallet['hi']
+                    path=pallet['path']
+                    shelf_lo,shelf_hi=bounds([stage.GetPrimAtPath(path.split('/SM_')[0])])
+                    yaws=(math.pi,) if '/Shelf_0/' in path else ((0.,) if '/Shelf_2/' in path else (0.,math.pi))
+                    for yaw in yaws:
+                        angle=yaw-source_yaw
+                        rotation=np.array([[math.cos(angle),-math.sin(angle),0],
+                                           [math.sin(angle),math.cos(angle),0],[0,0,1]])
+                        projected=np.abs(rotation)@half
+                        low,high=plo[1]+projected[1]+.035,phi[1]-projected[1]-.035
+                        if low>high:continue
+                        middle=(low+high)/2
+                        ys=sorted(set([float(low),float(high),float(middle)]+
+                                      [float(v) for v in np.arange(low,high+.001,.12)]),
+                                  key=lambda v:abs(v-(middle-.30 if r['candidate_kind'] in ('debris','tool') else middle)))
+                        toward=np.array([math.cos(yaw),math.sin(yaw)])
+                        edge=shelf_hi[0] if yaw==math.pi else shelf_lo[0]
+                        support_edge=phi[0] if yaw==math.pi else plo[0]
+                        cx=support_edge-toward[0]*.015+toward[0]*projected[0]
+                        if r.get('candidate_kind')=='beam':cx=(plo[0]+phi[0])/2+.15
+                        if not plo[0]-.015<=cx<=phi[0]+.015:continue
+                        for y in ys:
+                            box=(float(cx-projected[0]),float(y-projected[1]),float(cx+projected[0]),float(y+projected[1]))
+                            if not cleanup.slot_free(box):continue
+                            dock=np.array([edge-toward[0]*.70,y])
+                            if not r['selection_nav'].free(dock):continue
+                            import omni.physx
+                            hit=omni.physx.get_physx_scene_query_interface().raycast_closest(
+                                (float(cx),float(y),float(phi[2]+.15)),(0.,0.,-1.),.6)
+                            if not hit['hit'] or not any(str(hit.get(k,'')).startswith(path) for k in ('rigidBody','collision')):continue
+                            support_z=float(phi[2]+.15-hit['distance'])
+                            centre=np.array([cx,y,support_z+.003+projected[2]])
+                            target=centre+rotation@(grip-(source_lo+source_hi)/2)
+                            shoulder=np.array([*(dock+.30*toward),r['shoulder_z']])
+                            r['solver'].set_robot_base_pose(shoulder,np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
+                            if all(r['solver'].compute_inverse_kinematics('right_gripper',p,down(yaw))[1]
+                                   for p in (target,target+[0,0,.06],target+[0,0,.15])):
+                                r['candidate_rack_slot']={'path':path,'yaw':float(yaw),'y':float(y),
+                                    'centre_x':float(cx),'support_z':support_z,'box':box,'kind':r['candidate_kind']}
+                                return True
+                return False
             path,yaw=(rack_specs if r['task_index']==0 else next_rack_specs)[r['id']]
             pallet_lo,pallet_hi=bounds([stage.GetPrimAtPath(path)])
             shelf=stage.GetPrimAtPath(path.split('/SM_')[0])
@@ -690,22 +781,46 @@ def main():
         def run_one_task(r):
             try:
                 event(r,'reserve_existing_environment_object')
-                groups=[g for g in candidate_groups[r['id']] if not any(str(p.GetPath()) in reserved for p in g)]
+                available=cleanup.available(r['id']) if cleanup is not None else []
+                if cleanup is not None:
+                    own={str(group[0].GetPath()) for group in candidate_groups[r['id']]}
+                    preferred=[key for key in available if key in own]
+                    available=preferred or available
+                groups=([cleanup_by_id[key]['prims'] for key in available] if cleanup is not None else
+                        [g for g in candidate_groups[r['id']] if not any(str(p.GetPath()) in reserved for p in g)])
                 try:
-                    _,group,dock,grip,carry,yaw=choose(r,groups)
+                    _,group,dock,grip,carry,yaw,rack_slot=yield from choose(r,groups)
                 except RuntimeError as exc:
+                    if cleanup is not None and str(exc).startswith('No reachable floor object'):
+                        cleanup.reject(r['id'],available,'No currently feasible route, grasp and unoccupied rack slot')
+                        r['cleanup_waiting']=True
+                        event(r,'cleanup_waiting')
+                        return
                     if not r['completed_jobs'] or not str(exc).startswith('No reachable floor object'):raise
                     r['no_more_reachable_props']=True
                     r['success']=True
                     event(r,'idle_no_more_reachable_original_props')
                     return
                 r['selected_props']=[str(p.GetPath()) for p in group]
+                if cleanup is not None:
+                    key=str(group[0].GetPath())
+                    r['cleanup_lease']=cleanup.claim(key,r['id'],rack_slot)
+                    r['cleanup_id']=key
+                    r['cleanup_slot']=rack_slot
+                    r['cleanup_manipulated']=False
+                    r['task']='Arrange '+cleanup.items[key]['kind']+': '+group[0].GetName()
                 reserved.update(r['selected_props'])
                 print('Selected ORIGINAL props:',r['selected_props'])
-                if r['id'] in (4,5):
+                if cleanup is not None:
+                    cleanup_transit.request(r['id'])
+                    event(r,'yield_cleanup_aisle_turn')
+                    while not cleanup_transit.enter(r['id']):yield
+                    event(r,'cleanup_aisle_trip_reserved')
+                needs_rear_zone=cleanup is None and r['id'] in (4,5)
+                if needs_rear_zone:
                     if rear_zone_owner[0] is not None:
                         event(r,'navigate_to_clear_rear_waiting_point')
-                        holding=np.array([2.0,7.0])
+                        holding=r['home'][:2].copy() if cleanup is not None else np.array([2.0,7.0])
                         yield from navigate(r,holding,yaw=0.)
                         event(r,'yield_rear_pickup_zone_to_other_robot')
                         while rear_zone_owner[0] is not None:yield
@@ -717,6 +832,7 @@ def main():
                 yield from surface_contact(r,group,grip)
                 source_hand=pose(r['hand'])[0].copy()
                 original_center=sum(bounds(group))/2
+                if cleanup is not None:r['cleanup_manipulated']=True
                 item=yield from mobilize(r,group)
                 # Compound conversion must preserve the exact visible source pose.
                 if np.linalg.norm(pose(item)[0]-original_center)>.002 or np.linalg.norm(pose(r['hand'])[0]-source_hand)>.003:
@@ -739,16 +855,17 @@ def main():
                 r['lift_check']=dict(rise_m=float(after[2]-before[2]),relative_drift_m=drift)
                 event(r,'lift_verified_carry_to_existing_rack')
                 yield from arm_to(r,carry,closed=True)
-                pallet_path,rack_yaw=(rack_specs if r['task_index']==0 else next_rack_specs)[r['id']]
+                pallet_path,rack_yaw=((r['cleanup_slot']['path'],r['cleanup_slot']['yaw']) if cleanup is not None else
+                                     (rack_specs if r['task_index']==0 else next_rack_specs)[r['id']])
                 pallet=stage.GetPrimAtPath(pallet_path)
                 if not pallet:raise RuntimeError('Existing rack pallet is missing: '+pallet_path)
                 lo,hi=bounds([pallet])
-                rack_y=(lo[1]+hi[1])/2
-                if r['id'] in (2,3):rack_y+=(-.30 if r['task_index']==0 else .30)
+                rack_y=r['cleanup_slot']['y'] if cleanup is not None else (lo[1]+hi[1])/2
+                if cleanup is None and r['id'] in (2,3):rack_y+=(-.30 if r['task_index']==0 else .30)
                 rack=stage.GetPrimAtPath(pallet_path.split('/SM_')[0])
                 rack_lo,rack_hi=bounds([rack])
                 r['destination_shelf']=str(rack.GetPath())
-                if r['id']==1:
+                if cleanup is None and r['id']==1:
                     yield from reserve_left_corridor(r,[-3.,7.])
                 toward=np.array([math.cos(rack_yaw),math.sin(rack_yaw)])
                 edge=rack_hi[0] if rack_yaw==math.pi else rack_lo[0]
@@ -763,7 +880,7 @@ def main():
                 current=pose(r['base'])[0]
                 front=min(front_options,key=lambda p:np.linalg.norm(p-current[:2]))
                 yield from navigate(r,front)
-                if rear_zone_owner[0]==r['id']:
+                if cleanup is None and rear_zone_owner[0]==r['id']:
                     rear_zone_owner[0]=None
                 if '/Shelf_0/' in pallet_path:
                     yield from reserve_left_corridor(r,[r['home'][0],-8.7])
@@ -771,18 +888,21 @@ def main():
                 yield from navigate(r,depot,yaw=rack_yaw)
                 r['solver'].set_robot_base_pose(*pose(r['shoulder']))
                 tcp=r['ik'].compute_end_effector_pose()[0]
-                body_lo,body_hi=bounds([item])
+                body_lo,body_hi=exact_payload_bounds(item) if cleanup is not None else bounds([item])
                 body_center=pose(item)[0]
                 # Align the existing object's near edge with the pallet edge.
                 near=body_hi[0] if rack_yaw==math.pi else body_lo[0]
                 support_edge=hi[0] if rack_yaw==math.pi else lo[0]
                 dx=support_edge-toward[0]*.015-near
-                if r['id']==4:
+                if cleanup is not None:
+                    dx=r['cleanup_slot']['centre_x']-(body_lo[0]+body_hi[0])/2
+                elif r['id']==4:
                     # Support a long beam near its centre of mass, rather
                     # than balancing it at the pallet's far edge.
                     dx=(lo[0]+hi[0])/2+.15-body_center[0]
                 dy=rack_y-(body_lo[1]+body_hi[1])/2
-                dz=hi[2]+.003-body_lo[2]
+                support_z=r['cleanup_slot']['support_z'] if cleanup is not None else float(hi[2])
+                dz=support_z+.003-body_lo[2]
                 shift=np.array([dx,dy,dz])
                 destination=tcp+shift
                 r['drop_goal']=(body_center+shift).tolist()
@@ -795,7 +915,11 @@ def main():
                 r['robot'].apply_action(ArticulationAction(joint_positions=np.array([.04,.04]),joint_indices=r['fingers']))
                 event(r,'release_on_rack')
                 for _ in range(30):yield
-                yield from arm_to(r,destination+[0,0,.10])
+                try:
+                    yield from arm_to(r,destination+[0,0,.10])
+                except RuntimeError:
+                    if cleanup is None:raise
+                    yield from arm_to(r,destination+[0,0,.06])
                 r['robot'].apply_action(ArticulationAction(joint_positions=folded,joint_indices=r['arm']))
                 for _ in range(90):yield
                 UsdPhysics.FilteredPairsAPI(item).GetFilteredPairsRel().SetTargets([])
@@ -804,24 +928,37 @@ def main():
                 print('RACK_SETTLE',r['id'],'actual',final,'expected',r['drop_goal'],'error',r['placement_error'],
                       'velocity',live[str(item.GetPath())].get_linear_velocity())
                 supported=True
-                if r['id']==4:
-                    final_lo,final_hi=bounds([item])
+                if cleanup is not None or r['id']==4:
+                    final_lo,final_hi=exact_payload_bounds(item) if cleanup is not None else bounds([item])
                     supported=bool(np.all(final[:2]>=lo[:2]-.015) and np.all(final[:2]<=hi[:2]+.015)
-                                   and abs(final_lo[2]-hi[2])<.025
+                                   and abs(final_lo[2]-support_z)<.025
                                    and np.linalg.norm(final[:2]-np.array(r['drop_goal'])[:2])<.35)
                 elif r['placement_error']>.06:
                     supported=False
                 if not supported or np.linalg.norm(live[str(item.GetPath())].get_linear_velocity())>.05:
                     raise RuntimeError('Original prop did not settle on assigned rack pallet')
+                if cleanup is not None:
+                    exact_lo,exact_hi=exact_payload_bounds(item)
+                    cleanup.complete(r['cleanup_id'],True,(float(exact_lo[0]),float(exact_lo[1]),float(exact_hi[0]),float(exact_hi[1])))
                 r['success']=True
                 stored_props.append(item)
                 r['completed_jobs'].append(dict(source_props=r['selected_props'],rack_path=pallet_path,
                     rack_slot_y=float(rack_y),
+                    support_z=support_z,
+                    cleanup_object_id=r.get('cleanup_id'),
+                    object_kind=cleanup.items[r['cleanup_id']]['kind'] if cleanup is not None else None,
                     expected_position=r['drop_goal'],
                     payload_path=str(item.GetPath()),contact_check=r['contact_check'],lift_check=r['lift_check'],
                     placement_error_m=r['placement_error']))
                 event(r,'completed_original_prop_on_rack')
+                if cleanup is not None:
+                    print('CLEANUP PROGRESS:',cleanup.summary()['counts'],flush=True)
             except Exception as exc:
+                if cleanup is not None and r.get('cleanup_manipulated',False):cleanup_transit.release(r['id'])
+                if cleanup is not None and r.get('cleanup_id'):
+                    cleanup.fail(r['cleanup_id'],str(exc),before_manipulation=not r.get('cleanup_manipulated',False))
+                    if not r.get('cleanup_manipulated',False):
+                        reserved.difference_update(r.get('selected_props',[]))
                 if rear_zone_owner[0]==r['id']:
                     rear_zone_owner[0]=None
                 if left_corridor_owner[0]==r['id']:left_corridor_owner[0]=None
@@ -832,11 +969,43 @@ def main():
                 traceback.print_exc()
         def run_task(r):
             r['completed_jobs']=[]
-            for index in range(args.tasks_per_robot):
+            index=0
+            while cleanup is not None or index<args.tasks_per_robot:
+                if cleanup is not None:
+                    if cleanup.summary()['floor_clean']:
+                        r['success']=True
+                        event(r,'all_assigned_environment_tasks_complete')
+                        return
+                    if not cleanup.available(r['id']):
+                        r['cleanup_waiting']=True
+                        if r['state']!='cleanup_waiting':event(r,'cleanup_waiting')
+                        yield
+                        continue
+                    r['cleanup_waiting']=False
+                    r['cleanup_id']=None
+                    r['cleanup_manipulated']=False
                 r['task_index']=index
                 r['success']=False
                 yield from run_one_task(r)
-                if not r['success']:return
+                if cleanup is not None and r.get('cleanup_waiting'):
+                    yield
+                    continue
+                if not r['success']:
+                    if cleanup is None or r.get('cleanup_manipulated',False):return
+                    # Source geometry is still static and unchanged. Return
+                    # safely before this robot tries another pending object.
+                    r['robot'].apply_action(ArticulationAction(joint_positions=folded,joint_indices=r['arm']))
+                    for _ in range(90):yield
+                    r.update(item=None,originals=[],carrying=False,destination_shelf=None)
+                    try:
+                        event(r,'recover_from_unstarted_pickup')
+                        yield from navigate(r,r['home'][:2],yaw=0.)
+                    except Exception:
+                        cleanup_transit.release(r['id'])
+                        return
+                    cleanup_transit.release(r['id'])
+                    r['failure']=None
+                    continue
                 if r.get('no_more_reachable_props'):return
                 try:
                     event(r,'back_out_from_completed_rack_placement')
@@ -848,12 +1017,17 @@ def main():
                     yield from navigate(r,r['home'][:2],yaw=0.)
                 except Exception as exc:
                     if left_corridor_owner[0]==r['id']:left_corridor_owner[0]=None
+                    if rear_zone_owner[0]==r['id']:rear_zone_owner[0]=None
+                    cleanup_transit.release(r['id'])
                     r['success']=False
                     r['failure']='Return navigation: '+str(exc)
                     event(r,'failed')
                     return
                 if left_corridor_owner[0]==r['id']:left_corridor_owner[0]=None
-                if index+1<args.tasks_per_robot:
+                if rear_zone_owner[0]==r['id']:rear_zone_owner[0]=None
+                cleanup_transit.release(r['id'])
+                index+=1
+                if cleanup is not None or index<args.tasks_per_robot:
                     event(r,'request_next_available_original_prop')
             event(r,'all_assigned_environment_tasks_complete')
         # Cooperative workers issue commands for the SAME physics frame.
@@ -864,21 +1038,37 @@ def main():
         workers={r['id']:run_task(r) for r in selected}
         camera_start=UsdGeom.Xformable(camera).GetLocalTransformation()
         camera_unchanged=True
+        cleanup_stop_reason=None
         while workers and clock[0]/60 < args.duration and app.is_running():
             for robot_id,worker in sorted(list(workers.items()),key=lambda pair:-research.priority(pair[0])):
                 try:
                     next(worker)
                 except StopIteration:
                     del workers[robot_id]
+            if cleanup is not None and workers and all(r.get('cleanup_waiting',False) for r in selected if r['id'] in workers):
+                if not any(item['state']=='assigned' for item in cleanup.items.values()):
+                    cleanup_stop_reason='No currently feasible pickup and free rack slot; remaining objects are not clean'
+                    break
             if workers:
                 tick()
                 camera_unchanged &= UsdGeom.Xformable(camera).GetLocalTransformation()==camera_start
+                if cleanup is not None and clock[0]%60==0:
+                    state=cleanup.summary()
+                    if ui_cleanup_summary is not None:
+                        active='Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting'
+                        ui_cleanup_summary.text='Floor cleanup | stored %d/%d | active: %s | pending %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,state['counts']['pending'],state['counts']['failed'])
+                    if clock[0]%300==0:
+                        args.report.parent.mkdir(parents=True,exist_ok=True)
+                        args.report.with_suffix('.cleanup.json').write_text(json.dumps(dict(state,simulation_time=clock[0]/60,
+                            aisle_owner=cleanup_transit.owner,aisle_waiting=cleanup_transit.queue),indent=2),encoding='utf-8')
                 if clock[0]%600==0:
                     print('PROGRESS',clock[0]/60,[(r['id'],r['state'],tuple(round(float(v),2) for v in pose(r['base'])[0][:2])) for r in selected])
         for r in selected:
             if r['id'] in workers:
-                r['failure']='Simulation closed or maximum duration exceeded'
+                r['failure']=cleanup_stop_reason or 'Simulation closed or maximum duration exceeded'
                 r['success']=False
+                if cleanup is not None and r.get('cleanup_id'):
+                    cleanup.fail(r['cleanup_id'],r['failure'],before_manipulation=not r.get('cleanup_manipulated',False))
                 event(r,'failed')
         for worker in workers.values():
             worker.close()
@@ -893,15 +1083,18 @@ def main():
                 pallet_lo,pallet_hi=bounds([stage.GetPrimAtPath(job['rack_path'])])
                 prop_lo,prop_hi=exact_payload_bounds(prim)
                 slot_tolerance=.15 if r['id'] in (2,3) else .35
+                support_z=job.get('support_z',float(pallet_hi[2]))
                 stored=(np.all(final[:2]>=pallet_lo[:2]-.015) and np.all(final[:2]<=pallet_hi[:2]+.015)
-                        and abs(prop_lo[2]-pallet_hi[2])<.025
+                        and abs(prop_lo[2]-support_z)<.025
                         and abs(final[1]-job['rack_slot_y'])<slot_tolerance)
-                job['support_gap_m']=float(prop_lo[2]-pallet_hi[2])
+                job['support_gap_m']=float(prop_lo[2]-support_z)
                 job['final_speed_m_s']=float(np.linalg.norm(velocity))
                 job['still_stored']=bool(stored and np.linalg.norm(velocity)<.05)
                 if not job['still_stored']:
                     r['success']=False
                     r['failure']='A previously placed original prop left its rack location'
+                    if cleanup is not None and job.get('cleanup_object_id'):
+                        cleanup.items[job['cleanup_object_id']].update(state='failed',reason=r['failure'])
 
         report=dict(scene=str(args.scene.resolve()),mode='mobile planar-drive physics; original floor props; assisted grasp',
                     reserved_original_paths=sorted(reserved),requested_max_tasks_per_robot=args.tasks_per_robot,
@@ -920,6 +1113,14 @@ def main():
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()
+        if cleanup is not None:
+            report['cleanup']=cleanup.summary()
+            report['cleanup']['stop_reason']=cleanup_stop_reason or ('All registered objects stored' if report['cleanup']['floor_clean'] else
+                'Simulation limit, failed controller or unresolved objects')
+            print('FLOOR CLEAN' if report['cleanup']['floor_clean'] else 'FLOOR NOT YET CLEAN',report['cleanup']['counts'],flush=True)
+            if ui_cleanup_summary is not None:
+                ui_cleanup_summary.text=('FLOOR CLEAN' if report['cleanup']['floor_clean'] else 'CLEANUP STOPPED: floor not yet clean')+' | stored %d/%d | see cleanup report'%(report['cleanup']['counts']['stored'],report['cleanup']['total_objects'])
+            args.report.with_suffix('.cleanup.json').write_text(json.dumps(report['cleanup'],indent=2),encoding='utf-8')
         args.report.parent.mkdir(parents=True,exist_ok=True)
         args.report.write_text(json.dumps(report,indent=2),encoding='utf-8')
         for result in report['robots']:
@@ -932,7 +1133,7 @@ def main():
         if not args.headless and not args.exit_on_complete:
             print('Tasks ended. Close the window to exit.')
             while app.is_running():world.step(render=True)
-        return 0 if all(r['success'] for r in records if not args.robot or r['id']==args.robot) else 1
+        return (0 if report['cleanup']['floor_clean'] else 1) if cleanup is not None else (0 if all(r['success'] for r in selected) else 1)
     except Exception:
         traceback.print_exc()
         sys.stderr.flush()

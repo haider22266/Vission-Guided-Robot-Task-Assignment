@@ -4,13 +4,14 @@ param(
     [string]$Model='', [string]$ClassifierPython='',
     [ValidateSet('auto','windows','wsl')][string]$ClassifierBackend='auto',
     [string]$ClassifierDistro='Ubuntu-22.04',
-    [switch]$Headless, [double]$Duration=600, [switch]$ExitOnComplete
+    [switch]$Headless, [double]$Duration=0, [ValidateSet(0,1,2)][int]$TasksPerRobot=0, [switch]$ExitOnComplete
 )
 $ErrorActionPreference='Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $runner=Join-Path $IsaacRoot 'python.bat'
 if (-not (Test-Path -LiteralPath $runner)) { throw "Isaac launcher missing: $runner" }
-$runArgs=@('isaac_sim/environment_cdd_project.py','--perception-backend',$PerceptionBackend,'--duration',"$Duration")
+if ($Headless -and $Duration -eq 0) { $Duration=3600 }
+$runArgs=@('isaac_sim/environment_cdd_project.py','--perception-backend',$PerceptionBackend,'--duration',"$Duration",'--tasks-per-robot',"$TasksPerRobot")
 if ($PerceptionBackend -eq 'efficientnet') {
     if (-not $Model) { $Model=Join-Path $PSScriptRoot 'models\cdd\efficientnet_cdd.keras' }
     if (-not (Test-Path -LiteralPath $Model -PathType Leaf)) { throw 'Pass -Model with the trained CDD Keras checkpoint.' }

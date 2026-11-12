@@ -3,11 +3,14 @@
 Five Ridgeback–Franka robots operate in an existing warehouse with props and
 racks. Mounted RGB cameras send live images to a separately running EfficientNetB0
 classifier trained on the Comprehensive Disaster Dataset (CDD). Predicted risks
-adjust the existing role-constrained worker scheduling priority. The controller
+adjust worker scheduling priority. The controller
 retains object reservations, navigation, contact checks and assisted rack placement.
 
-The current warehouse integration uses a priority baseline. It does not run
-QMIX or change robot roles. The separate ROS 2 implementation and policy
+The default now uses a [continuous shared cleanup queue](CONTINUOUS_CLEANUP.md)
+instead of a two-object-per-robot limit. The controller reserves free rack
+footprints and keeps requesting work, reporting unresolved objects explicitly.
+This uses a priority baseline; it does not run QMIX or learned role switching.
+The separate ROS 2 implementation and policy
 interface are described in [ROS2_PIPELINE.md](ROS2_PIPELINE.md).
 
 ## Recorded results
@@ -15,7 +18,7 @@ interface are described in [ROS2_PIPELINE.md](ROS2_PIPELINE.md).
 - Held-out CDD test set: 2,000 images; 95.95% accuracy, 91.65% balanced accuracy,
   and 0.889 macro F1. Exact decoded-image duplicates are separated, but related
   events and near-duplicates are not known to be disjoint.
-- Latest recorded warehouse run: five successful robot routines, seven objects
+- Recorded bounded-role warehouse run: five successful robot routines, seven objects
   verified on racks, and 338.667 simulated seconds. Camera predictions are
   unlabelled, so these classifier test metrics are not Isaac camera accuracy.
 - Human Damage is a whole-image area-search clue, not person localization.
