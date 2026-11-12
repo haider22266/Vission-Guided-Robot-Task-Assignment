@@ -1,0 +1,56 @@
+{
+  "trials": 10,
+  "seed": 42,
+  "duration_seconds": 300,
+  "failure_check_interval_seconds": 10,
+  "probability_semantics": "Bernoulli probability per healthy robot per check interval; permanent faults within each trial",
+  "results_directory": "results",
+  "scenarios": {
+    "scenario_1": [
+      "Fire Disaster",
+      "Damaged Infrastructure"
+    ],
+    "scenario_2": [
+      "Water Disaster",
+      "Human Damage"
+    ],
+    "scenario_3": [
+      "Fire Disaster",
+      "Water Disaster",
+      "Damaged Infrastructure",
+      "Human Damage"
+    ]
+  },
+  "experiments": [
+    {
+      "experiment_id": "A",
+      "failure_probability": 0,
+      "communication_failure_probability": 0
+    },
+    {
+      "experiment_id": "B",
+      "failure_probability": 0.1,
+      "communication_failure_probability": 0
+    },
+    {
+      "experiment_id": "C",
+      "failure_probability": 0.2,
+      "communication_failure_probability": 0
+    },
+    {
+      "experiment_id": "D",
+      "failure_probability": 0.3,
+      "communication_failure_probability": 0
+    },
+    {
+      "experiment_id": "E",
+      "failure_probability": 0,
+      "communication_failure_probability": 0.1
+    },
+    {
+      "experiment_id": "F",
+      "failure_probability": 0,
+      "communication_failure_probability": 0.3
+    }
+  ]
+}

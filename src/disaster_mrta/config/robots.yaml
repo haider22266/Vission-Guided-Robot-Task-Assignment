@@ -1,0 +1,93 @@
+{
+  "robots": [
+    {
+      "robot_id": "uav_1",
+      "robot_type": "UAV",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 5.0,
+      "velocity": 0.0,
+      "battery": 100.0,
+      "current_task": null,
+      "available": true,
+      "healthy": true,
+      "communication_available": true,
+      "capabilities": [
+        "aerial_search",
+        "fire_inspection",
+        "flood_monitoring",
+        "infrastructure_inspection",
+        "area_search"
+      ],
+      "speed_mps": 3.0,
+      "energy_per_meter": 0.08,
+      "execution_energy_per_second": 0.02
+    },
+    {
+      "robot_id": "ugv_1",
+      "robot_type": "UGV",
+      "x": 4.0,
+      "y": 0.0,
+      "z": 0.0,
+      "velocity": 0.0,
+      "battery": 100.0,
+      "current_task": null,
+      "available": true,
+      "healthy": true,
+      "communication_available": true,
+      "capabilities": [
+        "ground_inspection",
+        "infrastructure_inspection",
+        "area_search",
+        "fire_inspection",
+        "terrain_inspection"
+      ],
+      "speed_mps": 1.0,
+      "energy_per_meter": 0.08,
+      "execution_energy_per_second": 0.02
+    },
+    {
+      "robot_id": "ugv_2",
+      "robot_type": "UGV",
+      "x": 8.0,
+      "y": 0.0,
+      "z": 0.0,
+      "velocity": 0.0,
+      "battery": 100.0,
+      "current_task": null,
+      "available": true,
+      "healthy": true,
+      "communication_available": true,
+      "capabilities": [
+        "ground_inspection",
+        "infrastructure_inspection",
+        "area_search",
+        "flood_monitoring"
+      ],
+      "speed_mps": 1.0,
+      "energy_per_meter": 0.08,
+      "execution_energy_per_second": 0.02
+    },
+    {
+      "robot_id": "ugv_3",
+      "robot_type": "UGV",
+      "x": 12.0,
+      "y": 0.0,
+      "z": 0.0,
+      "velocity": 0.0,
+      "battery": 100.0,
+      "current_task": null,
+      "available": true,
+      "healthy": true,
+      "communication_available": true,
+      "capabilities": [
+        "ground_inspection",
+        "area_search",
+        "supply_delivery"
+      ],
+      "speed_mps": 1.0,
+      "energy_per_meter": 0.08,
+      "execution_energy_per_second": 0.02
+    }
+  ]
+}

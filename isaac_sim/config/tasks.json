@@ -1,0 +1,20 @@
+[
+  {
+    "id": 0, "type": "area_search",
+    "x": -3.0, "y": 2.0,
+    "priority": 0.8, "required_capability": "camera",
+    "status": "pending", "assigned_robot": null
+  },
+  {
+    "id": 1, "type": "hazard_inspection",
+    "x": 3.0, "y": 2.0,
+    "priority": 0.9, "required_capability": "inspection",
+    "status": "pending", "assigned_robot": null
+  },
+  {
+    "id": 2, "type": "supply_delivery",
+    "x": 0.0, "y": -3.0,
+    "priority": 0.7, "required_capability": "delivery",
+    "status": "pending", "assigned_robot": null
+  }
+]

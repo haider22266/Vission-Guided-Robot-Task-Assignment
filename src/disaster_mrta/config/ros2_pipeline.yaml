@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+    robot_count: 5
+    min_battery: 20.0
+    max_distance: 50.0
+    max_tasks: 8
+    monitor_period: 0.1
+    missed_updates: 3
+    max_speed: 0.5
+    goal_tolerance: 0.12
+    task_timeout: 120.0
+    input_range: "0_255"
+    model_output: "probabilities"
+    class_names: ["Damaged Infrastructure", "Fire Disaster", "Human Damage", "Land Disaster", "Non-Damage", "Water Disaster"]
+    camera_area_map: ["0", "1", "2", "3", "4"]
+    tasks_file: ""
+    metrics_directory: "results/ros2"

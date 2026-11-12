@@ -1,0 +1,6 @@
+﻿robot,task,success,completed_jobs,stored_jobs,started_at_s,first_motion_at_s,last_placement_at_s,travel_distance_m,no_more_reachable_props,failure
+Robot_01,Recover rear-left carton,True,1,1,0.0,0.016666666666666666,187.5,46.213,True,
+Robot_02,Clear aisle rubble,True,2,2,0.0,0.016666666666666666,229.533,64.5,False,
+Robot_03,Recover screwdriver,True,1,1,0.0,0.016666666666666666,117.1,50.018,True,
+Robot_04,Recover rear-right beam,True,1,1,0.0,0.016666666666666666,87.183,52.432,True,
+Robot_05,Recover rear-right carton,True,2,2,0.0,0.016666666666666666,299.55,128.692,False,

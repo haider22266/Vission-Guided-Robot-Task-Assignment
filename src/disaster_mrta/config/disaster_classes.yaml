@@ -1,0 +1,124 @@
+{
+  "classes": [
+    "Damaged Infrastructure",
+    "Fire Disaster",
+    "Human Damage",
+    "Land Disaster",
+    "Non-Damage",
+    "Water Disaster"
+  ],
+  "dataset_folders": {
+    "Damaged Infrastructure": "Damaged_Infrastructure",
+    "Fire Disaster": "Fire_Disaster",
+    "Human Damage": "Human_Damage",
+    "Land Disaster": "Land_Disaster",
+    "Non-Damage": "Non_Damage",
+    "Water Disaster": "Water_Disaster"
+  },
+  "rules": {
+    "Damaged Infrastructure": {
+      "task_type": "hazard_inspection",
+      "required_capability": "infrastructure_inspection",
+      "priority": 0.75,
+      "severity_thresholds": {
+        "HIGH": 0.8,
+        "MEDIUM": 0.6
+      },
+      "estimated_risk": {
+        "HIGH": 0.9,
+        "MEDIUM": 0.6,
+        "LOW": 0.3
+      },
+      "deadline_seconds": 180
+    },
+    "Fire Disaster": {
+      "task_type": "hazard_inspection",
+      "required_capability": "fire_inspection",
+      "priority": 0.85,
+      "severity_thresholds": {
+        "HIGH": 0.8,
+        "MEDIUM": 0.6
+      },
+      "estimated_risk": {
+        "HIGH": 0.9,
+        "MEDIUM": 0.6,
+        "LOW": 0.3
+      },
+      "deadline_seconds": 180
+    },
+    "Human Damage": {
+      "task_type": "area_search",
+      "required_capability": "area_search",
+      "priority": 0.95,
+      "severity_thresholds": {
+        "HIGH": 0.8,
+        "MEDIUM": 0.6
+      },
+      "estimated_risk": {
+        "HIGH": 0.9,
+        "MEDIUM": 0.6,
+        "LOW": 0.3
+      },
+      "deadline_seconds": 180,
+      "interpretation": "Whole-image area search clue; no specific person detected or localized"
+    },
+    "Land Disaster": {
+      "task_type": "hazard_inspection",
+      "required_capability": "terrain_inspection",
+      "priority": 0.65,
+      "severity_thresholds": {
+        "HIGH": 0.8,
+        "MEDIUM": 0.6
+      },
+      "estimated_risk": {
+        "HIGH": 0.9,
+        "MEDIUM": 0.6,
+        "LOW": 0.3
+      },
+      "deadline_seconds": 180
+    },
+    "Non-Damage": {
+      "task_type": null,
+      "required_capability": null,
+      "priority": 0,
+      "severity_thresholds": {
+        "HIGH": 0.8,
+        "MEDIUM": 0.6
+      },
+      "estimated_risk": {
+        "HIGH": 0.9,
+        "MEDIUM": 0.6,
+        "LOW": 0.3
+      },
+      "deadline_seconds": 180
+    },
+    "Water Disaster": {
+      "task_type": "hazard_inspection",
+      "required_capability": "flood_monitoring",
+      "priority": 0.8,
+      "severity_thresholds": {
+        "HIGH": 0.8,
+        "MEDIUM": 0.6
+      },
+      "estimated_risk": {
+        "HIGH": 0.9,
+        "MEDIUM": 0.6,
+        "LOW": 0.3
+      },
+      "deadline_seconds": 180
+    }
+  },
+  "generate_non_damage_tasks": false,
+  "dataset_path": "../Comprehensive Disaster Dataset(CDD)",
+  "perception": {
+    "model_path": "models/disaster_model.keras",
+    "use_mock_model": true,
+    "confidence_threshold": 0.6,
+    "image_size": [
+      224,
+      224
+    ],
+    "preprocessing": "rescale_0_1",
+    "output_type": "probabilities"
+  }
+}

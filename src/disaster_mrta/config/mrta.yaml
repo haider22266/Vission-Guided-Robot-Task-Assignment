@@ -1,0 +1,23 @@
+{
+  "algorithm": "PROPOSED_UTILITY",
+  "strategies": [
+    "RANDOM",
+    "GREEDY_DISTANCE",
+    "PROPOSED_UTILITY"
+  ],
+  "seed": 42,
+  "weights": {
+    "priority": 3.0,
+    "capability": 1.0,
+    "confidence": 1.0,
+    "distance": 1.0,
+    "energy": 1.0,
+    "deadline": 2.0
+  },
+  "distance_normalizer_m": 100.0,
+  "battery_reserve": 10.0,
+  "task_execution_seconds": 15.0,
+  "allocation_period_seconds": 0.5,
+  "task_deduplication_radius_m": 5.0,
+  "task_deduplication_window_seconds": 30.0
+}
