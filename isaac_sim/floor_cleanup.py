@@ -178,6 +178,19 @@ class CleanupQueue:
             raise
         item['reason']='Verified supported rack settling after recovery release'
 
+    def quarantine_released(self,key,released,speed,gripper_gap):
+        """Free the worker only when a failed load is detached and clear."""
+        item=self.items[key]
+        if (item['state']!='failed' or not released or
+                not all(math.isfinite(v) for v in (speed,gripper_gap)) or
+                not 0<=speed<=.05 or gripper_gap<.12):
+            raise ValueError('Detached, settled load and clear gripper required')
+        self.slots.pop(item.get('lease'),None)
+        item.pop('lease',None)
+        item.update(state='blocked',robot=None,
+                    reason='Released load could not be safely requeued; retained as physical obstacle for operator review')
+        self.epoch+=1
+
     def summary(self):
         counts={state:sum(item['state']==state for item in self.items.values())
                 for state in ('pending','assigned','stored','blocked','failed')}

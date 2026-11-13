@@ -145,6 +145,18 @@ review rather than retrying forever. Loads that cannot be safely recovered stay
 failed with their reason. This mode remains
 an assisted-grasp simulation controller and a priority baseline, not QMIX.
 
+After a verified load recovery, the robot now requests a replacement task
+immediately instead of first returning home. Recovered objects are considered
+before ordinary pending objects, while the previous robot's retry exclusion
+and exclusive assignment remain active. The panel explicitly labels task
+selection instead of retaining the old dropped-object task name. If physical
+floor handoff cannot be verified, a detached load moving at no more than
+0.05 m/s and at least 0.12 m from the gripper can be quarantined as a blocked
+physical obstacle, freeing the clear robot and its unused rack reservation.
+An attached, moving, or close load still requires operator recovery; it is
+never declared stored to free a robot. All 83 logic tests pass. This revised
+post-drop worker continuation has not yet been live-validated in Isaac.
+
 The earlier seven-placement result in `reports/` belongs to the bounded role
 demo. It is not evidence that all 88 objects were cleaned by continuous mode.
 

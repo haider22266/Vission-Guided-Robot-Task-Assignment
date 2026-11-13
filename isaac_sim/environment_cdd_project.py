@@ -667,7 +667,9 @@ def main():
             r['selection_nav']=nav
             options = []
             best_cost=math.inf
-            groups=sorted(groups,key=lambda g:np.linalg.norm(((sum(bounds(g)))/2)[:2]-current[:2]))
+            groups=sorted(groups,key=lambda g:(
+                0 if cleanup is not None and cleanup.items[str(g[0].GetPath())].get('recoveries',0) else 1,
+                np.linalg.norm(((sum(bounds(g)))/2)[:2]-current[:2])))
             for group_index,group in enumerate(groups):
                 if group_index and group_index%2==0:yield
                 if cleanup is not None and cleanup.items[str(group[0].GetPath())]['state']!='pending':continue
@@ -1082,6 +1084,9 @@ def main():
 
         def run_one_task(r):
             try:
+                if cleanup is not None:
+                    r['task']='Selecting next feasible task'
+                    r['selected_props']=[]
                 event(r,'reserve_existing_environment_object')
                 available=available_cleanup(r) if cleanup is not None else []
                 if cleanup is not None and not args.fast_cleanup:
@@ -1429,8 +1434,35 @@ def main():
                     if cleanup is None:return
                     traffic_deferred=r.pop('traffic_deferred',False)
                     if r.get('cleanup_manipulated',False):
-                        if not (yield from recover_floor_payload(r)):return
+                        recovered=yield from recover_floor_payload(r)
+                        if not recovered:
+                            # A quarantined load need not retire an empty,
+                            # physically clear manipulator for the whole run.
+                            item=r.get('item')
+                            if item is None or not item.IsValid():return
+                            low,high=exact_payload_bounds(item)
+                            r['solver'].set_robot_base_pose(*pose(r['shoulder']))
+                            tip=r['ik'].compute_end_effector_pose()[0]
+                            gap=float(np.linalg.norm(np.maximum(0.,np.maximum(low-tip,tip-high))))
+                            speed=float(np.linalg.norm(live[str(item.GetPath())].get_linear_velocity()))
+                            try:
+                                cleanup.quarantine_released(r['cleanup_id'],
+                                    not bool(stage.GetPrimAtPath(task_root+'/Grasp_%02d'%r['id'])),speed,gap)
+                            except ValueError:
+                                event(r,'unsafe_recovery_requires_operator')
+                                return
+                            r.setdefault('quarantined_loads',[]).append({'object':r['cleanup_id'],'time':clock[0]/60,
+                                'speed_m_s':speed,'gripper_gap_m':gap})
+                            r.update(item=None,originals=[],carrying=False,destination_shelf=None,cleanup_manipulated=False)
+                            event(r,'released_load_blocked_robot_available')
                         index+=1
+                        cleanup_transit.release(r['id'])
+                        r['failure']=None
+                        r['selected_props']=[]
+                        r['task']='Selecting replacement task after load recovery'
+                        event(r,'request_replacement_task_after_load_recovery')
+                        yield
+                        continue
                     elif traffic_deferred:
                         # No object was touched. The lease was already released;
                         # do not start another home-route wait on the same peers.
@@ -1588,6 +1620,7 @@ def main():
                                          recoveries=r.get('recoveries',[]),route_backoffs=r.get('route_backoffs',0),
                                          traffic_deferrals=r.get('traffic_deferrals',0),
                                          idle_relocations=r.get('idle_relocations',0),
+                                         quarantined_loads=r.get('quarantined_loads',[]),
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()

@@ -67,6 +67,19 @@ def test_traffic_before_pickup_releases_object_and_slot_for_other_robot():
     queue.claim('a',2,{'box':(0,0,1,1),'path':'rack'})
 
 
+def test_unrecoverable_released_load_does_not_retire_clear_worker_or_fake_success():
+    queue=CleanupQueue(groups())
+    queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})
+    queue.fail('a','Load settled outside recoverable floor region')
+    for released,speed,gap in [(False,0.,.2),(True,.2,.2),(True,0.,.01),(True,float('nan'),.2)]:
+        with pytest.raises(ValueError):queue.quarantine_released('a',released,speed,gap)
+    assert queue.items['a']['state']=='failed' and queue.slots
+    queue.quarantine_released('a',True,.001,.2)
+    assert queue.summary()['counts']['stored']==0
+    assert queue.items['a']['state']=='blocked' and not queue.slots
+    queue.claim('b',1,{'box':(0,0,1,1),'path':'rack'})
+
+
 def test_exclusive_objects_and_physical_rack_footprints():
     queue=CleanupQueue(groups())
     queue.claim('a',1,{'box':(0,0,1,1),'path':'rack_a'})
