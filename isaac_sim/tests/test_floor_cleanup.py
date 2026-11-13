@@ -79,6 +79,18 @@ def test_traffic_before_pickup_releases_object_and_slot_for_other_robot():
     queue.claim('a',2,{'box':(0,0,1,1),'path':'rack'})
 
 
+def test_peer_motion_retries_access_rejections_without_stealing_leases():
+    queue=CleanupQueue(groups())
+    queue.reject(1,['a','b'],'Access blocked')
+    queue.items['a']['planning_diagnostics']={'1':{'route_blocked':10}}
+    queue.items['b']['planning_diagnostics']={'1':{'grasp_ik_failed':10}}
+    assert queue.retry_after_traffic(1)==1
+    assert queue.available(1)==['a']
+    queue.claim('a',2,{'box':(0,0,1,1),'path':'rack'})
+    assert queue.retry_after_traffic(1)==0
+    assert queue.items['a']['robot']==2 and len(queue.slots)==1
+
+
 def test_unrecoverable_released_load_does_not_retire_clear_worker_or_fake_success():
     queue=CleanupQueue(groups())
     queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})

@@ -938,8 +938,8 @@ def main():
                 if cleanup.items[r['candidate_object_id']]['state']!='pending':return False
                 half=(source_hi-source_lo)/2
                 rack_checks=0
-                preferred={rack_specs[r['id']][0],next_rack_specs[r['id']][0]}
-                for pallet in sorted(cleanup_pallets,key=lambda p:p['path'] not in preferred):
+                source_center=(source_lo+source_hi)/2
+                for pallet in sorted(cleanup_pallets,key=lambda p:float(np.linalg.norm(((p['lo']+p['hi'])/2-source_center)[:2]))):
                     plo,phi=pallet['lo'],pallet['hi']
                     path=pallet['path']
                     shelf_lo,shelf_hi=bounds([stage.GetPrimAtPath(path.split('/SM_')[0])])
@@ -1469,6 +1469,10 @@ def main():
         def run_task(r):
             r['completed_jobs']=[]
             index=0
+            def peer_snapshot():
+                return {other['id']:pose(other['base'])[0][:2].copy() for other in records if other is not r}
+            traffic_snapshot=peer_snapshot()
+            last_traffic_retry=-math.inf
             while cleanup is not None or index<args.tasks_per_robot:
                 if cleanup is not None:
                     if args.only_object and any(item['state']=='stored' and key.rsplit('/',1)[-1]==args.only_object
@@ -1481,6 +1485,16 @@ def main():
                         event(r,'all_assigned_environment_tasks_complete')
                         return
                     if not available_cleanup(r):
+                        current_peers=peer_snapshot()
+                        if clock[0]/60-last_traffic_retry>=10. and any(
+                                float(np.linalg.norm(p-traffic_snapshot[rid]))>=.75 for rid,p in current_peers.items()):
+                            traffic_snapshot=current_peers
+                            last_traffic_retry=clock[0]/60
+                            if cleanup.retry_after_traffic(r['id']):
+                                r['cleanup_waiting']=False
+                                event(r,'retry_available_tasks_after_peer_moved')
+                                yield
+                                continue
                         if needs_idle_clear(r):
                             r['cleanup_waiting']=False
                             r['idle_clear_attempt']=clock[0]/60
@@ -1642,7 +1656,9 @@ def main():
                     state=cleanup.summary()
                     if ui_cleanup_summary is not None:
                         active=(','.join('%02d'%rid for rid in route_reservations.routes) or 'manipulating / waiting') if concurrent_cleanup else ('Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting')
-                        ui_cleanup_summary.text='Stored %d/%d | active: %s | pending %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,state['counts']['pending'],state['counts']['blocked'],state['counts']['failed'])
+                        manipulating=','.join('%02d'%r['id'] for r in selected if r.get('carrying') or r['state'] in (
+                            'align_existing_gripper_to_surface','surface_contact_verified','contact_verified_assisted_grasp','place_on_existing_rack_pallet','release_on_rack')) or '-'
+                        ui_cleanup_summary.text='Stored %d/%d | routes: %s | handling: %s | pending %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,manipulating,state['counts']['pending'],state['counts']['blocked'],state['counts']['failed'])
                     if clock[0]%300==0:
                         args.report.parent.mkdir(parents=True,exist_ok=True)
                         args.report.with_suffix('.cleanup.json').write_text(json.dumps(dict(state,simulation_time=clock[0]/60,

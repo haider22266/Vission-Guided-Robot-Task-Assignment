@@ -96,6 +96,17 @@ class CleanupQueue:
                 self.items[key]['reason']=reason
                 if reason.startswith('Oversized beam:'):self.items[key]['state']='blocked'
 
+    def retry_after_traffic(self,robot):
+        """Reconsider access-dependent rejections without releasing any leases."""
+        refreshed=0
+        for item in self.items.values():
+            checks=item.get('planning_diagnostics',{}).get(str(robot),{})
+            if item['state']=='pending' and item['attempts'].get(robot)==self.epoch and any(
+                    checks.get(k,0) for k in ('docking_blocked','route_blocked','rack_fit_failed')):
+                item['attempts'].pop(robot,None)
+                refreshed+=1
+        return refreshed
+
     def slot_free(self,box):
         return not any(overlaps(box,other) for other in self.static_occupancy) and not any(
             overlaps(box,slot['box']) for slot in self.slots.values())

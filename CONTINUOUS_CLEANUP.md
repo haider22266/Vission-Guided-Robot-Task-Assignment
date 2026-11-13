@@ -20,6 +20,15 @@ carrying route when available instead of a compulsory front-apron detour, and
 requests the next task after backing out from a verified placement instead of
 returning home after every object. Idle robots still park to clear aisles.
 Grasp, load clearance, exclusive rack reservations and settling checks remain.
+Continuous cleanup now orders original pallets by XY distance from the source
+object, rather than by robot-specific predefined rack preferences. It selects
+the first feasible support in that order; this is nearest feasible by straight
+line distance, not a globally shortest collision-free carrying route. If a peer
+moves at least 0.75 m, an idle worker can retry its access-related rejections,
+at most once per 10 simulated seconds. Grasp-only failures and active leases
+are not reset by this traffic retry. The HUD lists routes and object handling
+separately: a route reservation alone is not the total number of working robots.
+The 85-test suite passes; sustained five-robot utilization is not established.
 
 Task search now handles at most six objects per pass and rejects only those
 actually inspected; unsearched objects remain available for the next worker
