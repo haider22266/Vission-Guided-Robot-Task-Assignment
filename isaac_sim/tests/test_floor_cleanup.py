@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations
+from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support
 
 
 def groups():
@@ -74,6 +74,26 @@ def test_failed_unstarted_pickup_releases_slot_for_another_robot():
     assert 'a' not in queue.available(1)
     assert 'a' in queue.available(2)
     queue.claim('a',2,slot)
+
+
+def test_adjusting_assigned_rack_target_is_atomic_and_preserves_other_slots():
+    queue=CleanupQueue(groups(),static_occupancy=[(5,0,6,1)])
+    queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})
+    queue.claim('b',2,{'box':(2,0,3,1),'path':'other'})
+    lease=queue.items['a']['lease']
+    queue.retarget('a',{'box':(.2,0,1.2,1),'path':'rack'})
+    assert queue.slots[lease]['box']==(.2,0,1.2,1)
+    with pytest.raises(ValueError):queue.retarget('a',{'box':(1.5,0,2.5,1),'path':'rack'})
+    assert queue.slots[lease]['box']==(.2,0,1.2,1)
+    assert not queue.can_retarget('a',{'box':(5,0,6,1)})
+    queue.complete('a',True)
+    assert not queue.can_retarget('a',{'box':(0,0,1,1)})
+
+
+def test_oversized_beam_requires_longer_support_before_any_pickup():
+    assert not beam_fits_support((2.60,1.12),(1.2,1.2))
+    assert not beam_fits_support((1.12,2.60),(1.2,1.2))
+    assert beam_fits_support((1.25,.18),(1.,1.2))
 
 
 def test_fifo_aisle_turns_prevent_head_on_trips_and_starvation():

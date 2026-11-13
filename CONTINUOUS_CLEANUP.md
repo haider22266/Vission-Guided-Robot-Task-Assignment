@@ -19,6 +19,23 @@ occupied stock and already reserved/stored footprints block candidate positions.
 Physics raycasts measure the actual pallet support surface. Objects are not
 duplicated, removed from the simulation or reported as stored to make progress.
 
+Oversized beams are screened before pickup: unsupported depth is limited and
+the beam footprint must fit the pallet's usable length. In particular,
+`Fallen_Rack_Beam_02` caused a placement IK/tracking failure in the earlier run.
+It now stays pending with a "needs longer storage support" reason instead of
+being carried into an unusable rack position. Robots can select other work;
+this does not claim that the oversized beam has been cleaned. It needs a
+suitable long-load storage destination to complete that job.
+
+Before placing an eligible load, the controller recomputes the target from the
+measured carried-object bounds and gripper pose, checking sampled approach,
+lowering and retreat IK. Small alternative placement offsets and docking moves
+are considered with object/rack reservations and navigation clearance retained.
+Objects move through the physical robot and verified attachment, never direct
+object-pose edits to simulate a successful placement. The placement regression
+stored a normal carton with 3.8 mm error; the oversized-beam regression correctly
+made no pickup. See `reports/stuck_robot_fix_validation.json` for scope and limits.
+
 The existing controller approaches, aligns, verifies contact, performs its
 assisted grasp/lift, carries, places and releases the object. It checks support
 and settling, then backs out and requests another job. Completed objects stay

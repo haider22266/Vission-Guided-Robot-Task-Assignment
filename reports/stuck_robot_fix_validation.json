@@ -1,0 +1,90 @@
+{
+  "tests": [
+    {
+      "test": "stuck_beam_regression",
+      "object": "Fallen_Rack_Beam_02",
+      "perception_backend": "mock",
+      "simulated_seconds": 0.0,
+      "floor_clean": false,
+      "reserved_source_paths": [],
+      "remaining_target": [
+        {
+          "id": "/World/DisasterAftermath/Props/Fallen_Rack_Beam_02",
+          "kind": "beam",
+          "paths": [
+            "/World/DisasterAftermath/Props/Fallen_Rack_Beam_02"
+          ],
+          "state": "pending",
+          "robot": null,
+          "attempts": {
+            "1": 0
+          },
+          "reason": "Oversized beam: needs longer storage support; existing low pallets cannot fit its footprint"
+        }
+      ],
+      "verified_placements": [],
+      "camera_unchanged": true
+    },
+    {
+      "test": "placement_reach_regression",
+      "object": "Rear_Left_Carton_01",
+      "perception_backend": "mock",
+      "simulated_seconds": 127.233,
+      "floor_clean": false,
+      "reserved_source_paths": [
+        "/World/DisasterAftermath/Props/Rear_Left_Carton_01",
+        "/World/DisasterAftermath/Props/Rear_Left_Tape_01"
+      ],
+      "remaining_target": [],
+      "verified_placements": [
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Left_Carton_01",
+            "/World/DisasterAftermath/Props/Rear_Left_Tape_01"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_318/SM_PaletteA_01",
+          "rack_slot_y": 7.528391383600701,
+          "support_z": 0.20987428670108843,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Left_Carton_01",
+          "object_kind": "carton",
+          "expected_position": [
+            -9.186552231451824,
+            7.528391382067166,
+            0.42104547938978887
+          ],
+          "payload_path": "/World/RobotTasks/Payload_01_00",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              1.7772239894833365e-15
+            ],
+            "forces_N": [
+              9.499906539916992,
+              6.723782539367676
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              5.551115123125783e-17,
+              5.551115123125783e-17
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06877055764198303,
+            "relative_drift_m": 3.7529694776396577e-06
+          },
+          "placement_error_m": 0.003805696295773291,
+          "final_position": [
+            -9.186139106750488,
+            7.528894901275635,
+            0.4172958433628082
+          ],
+          "support_gap_m": -0.000805863759420461,
+          "final_speed_m_s": 3.1607407436240464e-05,
+          "still_stored": true
+        }
+      ],
+      "camera_unchanged": true
+    }
+  ],
+  "interpretation": "The oversized beam is rejected before pickup with no object reservation or false successful placement. The carton test verifies one supported placement after actual-grasp IK preflight. Both tests use explicit mock perception to isolate manipulation. Neither is a full floor-cleanup test. Small docking-adjustment branches are implemented but were not exercised by the successful zero-offset carton case."
+}

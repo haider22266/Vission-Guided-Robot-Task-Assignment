@@ -39,6 +39,11 @@ def overlaps(a,b,gap=.025):
     return a[0]<b[2]+gap and b[0]<a[2]+gap and a[1]<b[3]+gap and b[1]<a[3]+gap
 
 
+def beam_fits_support(size,pallet_size):
+    """Bound unsupported depth; do not promise storage for multi-metre beams."""
+    return size[0]<=pallet_size[0]+.50 and size[1]<=pallet_size[1]-.06
+
+
 class CleanupQueue:
     def __init__(self,groups,unknown=(),static_occupancy=()):
         self.items={g['id']:{'id':g['id'],'kind':g['kind'],'paths':g['paths'],'state':'pending',
@@ -89,6 +94,18 @@ class CleanupQueue:
         item['state']='stored'
         self.slots[item['lease']]['state']='occupied'
         self.epoch+=1
+
+    def can_retarget(self,key,slot):
+        item=self.items[key]
+        if item['state']!='assigned':return False
+        box=slot['box']
+        return not any(overlaps(box,other) for other in self.static_occupancy) and not any(
+            overlaps(box,other['box']) for lease,other in self.slots.items() if lease!=item['lease'])
+
+    def retarget(self,key,slot):
+        if not self.can_retarget(key,slot):raise ValueError('Adjusted placement conflicts with reserved/occupied rack space')
+        item=self.items[key]
+        self.slots[item['lease']]=dict(slot,robot=item['robot'],object_id=key,state='reserved')
 
     def fail(self,key,reason,before_manipulation=False):
         item=self.items[key]

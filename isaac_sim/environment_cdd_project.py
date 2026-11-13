@@ -32,6 +32,7 @@ def arguments():
     p.add_argument('--speed', type=float, default=.8, help='Base speed in meters per second')
     p.add_argument('--camera', choices=('fixed',), default='fixed', help='Fixed perspective view; no camera tracking')
     p.add_argument('--robot',type=int,choices=range(1,6),help='Run just one robot for review')
+    p.add_argument('--only-object',help='Diagnostic: attempt only this exact original prop name; not full floor cleanup')
     p.add_argument('--tasks-per-robot',type=int,default=0,help='0: shared continuous floor cleanup; 1 or 2: original bounded role demo')
     p.add_argument('--serial-cleanup',action='store_true',help='Optional one-at-a-time debugging mode; default is concurrent')
     p.add_argument('--exit-on-complete', action='store_true')
@@ -147,7 +148,7 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
-        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support
         route_reservations=RouteReservations()
         concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
@@ -617,6 +618,12 @@ def main():
                 if cleanup is not None and cleanup.items[str(group[0].GetPath())]['state']!='pending':continue
                 if cleanup is not None:r['candidate_kind']=cleanup_by_id[str(group[0].GetPath())]['kind']
                 lo,hi = bounds(group)
+                if cleanup is not None and r['candidate_kind']=='beam':
+                    size=hi-lo
+                    if not any(beam_fits_support((size[0],size[1]),(p['hi'][0]-p['lo'][0],p['hi'][1]-p['lo'][1])) or
+                               beam_fits_support((size[1],size[0]),(p['hi'][0]-p['lo'][0],p['hi'][1]-p['lo'][1])) for p in cleanup_pallets):
+                        r.setdefault('placement_rejections',{})[str(group[0].GetPath())]='Oversized beam: needs longer storage support; existing low pallets cannot fit its footprint'
+                        continue
                 middle = (lo+hi)/2
                 primary=group[0]
                 transform=UsdGeom.XformCache().GetLocalToWorldTransform(primary)
@@ -798,6 +805,7 @@ def main():
                         rotation=np.array([[math.cos(angle),-math.sin(angle),0],
                                            [math.sin(angle),math.cos(angle),0],[0,0,1]])
                         projected=np.abs(rotation)@half
+                        if r.get('candidate_kind')=='beam' and not beam_fits_support(projected[:2],(phi[0]-plo[0],phi[1]-plo[1])):continue
                         low,high=plo[1]+projected[1]+.035,phi[1]-projected[1]-.035
                         if low>high:continue
                         middle=(low+high)/2
@@ -866,10 +874,85 @@ def main():
             left_corridor_owner[0]=r['id']
             event(r,'shared_left_rack_corridor_reserved')
 
+        def placement_path_feasible(r,start,target,shoulder):
+            """Check actual carried-grasp paths with continuous IK seeds."""
+            r['solver'].set_robot_base_pose(*shoulder)
+            seed=r['robot'].get_joint_positions()[r['arm']].copy()
+            points=(np.array(start),np.array(target)+[0,0,.06],np.array(target),np.array(target)+[0,0,.10])
+            for a,b in zip(points,points[1:]):
+                for t in np.linspace(0,1,13):
+                    joints,ok=r['solver'].compute_inverse_kinematics('right_gripper',a+(b-a)*t,down(r['yaw']),
+                        warm_start=seed,position_tolerance=.004)
+                    if not ok:
+                        r['placement_ik_failure']={'point':(a+(b-a)*t).tolist(),'stage':'unreachable IK'}
+                        return False
+                    seed=joints
+            return True
+
+        def fit_actual_placement(r,item,pallet_lo,pallet_hi,rack_yaw):
+            """Adjust reservation/dock through robot motion, never object edits."""
+            import omni.physx
+            original=dict(r['cleanup_slot'])
+            offsets=sorted([(x,y) for x in (0.,-.04,.04,-.08,.08) for y in (0.,-.04,.04,-.08,.08)],key=lambda pair:math.hypot(*pair))
+            docks=sorted([(d,y) for d in (0.,.035,-.06,-.12) for y in (0.,-.08,.08,-.16,.16)],key=lambda pair:math.hypot(*pair))
+            for round_index in range(3):
+                r['solver'].set_robot_base_pose(*pose(r['shoulder']))
+                tcp=r['ik'].compute_end_effector_pose()[0]
+                body_lo,body_hi=exact_payload_bounds(item)
+                box_center=(body_lo+body_hi)/2
+                base=pose(r['base'])[0]
+                shoulder,orientation=pose(r['shoulder'])
+                nav=planner(r)
+                chosen=None
+                for dock_index,(forward,lateral) in enumerate(docks):
+                    delta=np.array([forward*math.cos(rack_yaw),lateral,0.])
+                    goal=base[:2]+delta[:2]
+                    if not nav.free(goal) or not nav.clear(base[:2],goal) or not traffic_clear(r,goal):continue
+                    for dx,dy in offsets:
+                        cx,cy=original['centre_x']+dx,original['y']+dy
+                        if not (pallet_lo[0]+.005<=cx<=pallet_hi[0]-.005 and pallet_lo[1]+.005<=cy<=pallet_hi[1]-.005):continue
+                        shift=np.array([cx-box_center[0],cy-box_center[1],0.])
+                        box=(float(body_lo[0]+shift[0]),float(body_lo[1]+shift[1]),float(body_hi[0]+shift[0]),float(body_hi[1]+shift[1]))
+                        slot=dict(original,centre_x=float(cx),y=float(cy),box=box)
+                        if not cleanup.can_retarget(r['cleanup_id'],slot):continue
+                        hit=omni.physx.get_physx_scene_query_interface().raycast_closest((float(cx),float(cy),float(pallet_hi[2]+.15)),(0.,0.,-1.),.6)
+                        if not hit['hit'] or not any(str(hit.get(k,'')).startswith(original['path']) for k in ('rigidBody','collision')):continue
+                        support_z=float(pallet_hi[2]+.15-hit['distance'])
+                        shift[2]=support_z+.003-body_lo[2]
+                        destination=tcp+shift
+                        if placement_path_feasible(r,tcp+delta,destination,(shoulder+delta,orientation)):
+                            chosen=(slot,goal,destination,support_z,shift)
+                            break
+                    if chosen:break
+                    if dock_index%3==2:
+                        r['solver'].set_robot_base_pose(*pose(r['shoulder']))
+                        yield
+                r['solver'].set_robot_base_pose(*pose(r['shoulder']))
+                if chosen is None:
+                    print('PLACEMENT_DIAGNOSTIC',r['id'],'tcp',tcp,'bounds',body_lo,body_hi,'base',base,
+                          'slot',original,'last_ik_failure',r.get('placement_ik_failure'),flush=True)
+                    raise RuntimeError('No reachable placement/retreat path for actual carried grasp on reserved pallet')
+                slot,goal,destination,support_z,shift=chosen
+                slot['support_z']=support_z
+                cleanup.retarget(r['cleanup_id'],slot)
+                r['cleanup_slot']=slot
+                if float(np.linalg.norm(goal-base[:2]))>.005:
+                    event(r,'adjust_docking_for_reachable_placement')
+                    r.setdefault('placement_adjustments',[]).append({'time':clock[0]/60,'dock':goal.tolist(),'rack_y':slot['y'],'centre_x':slot['centre_x']})
+                    print('PLACEMENT_REDOCK',r['id'],'dock',goal,'slot',slot['centre_x'],slot['y'],flush=True)
+                    yield from navigate(r,goal,yaw=rack_yaw)
+                    continue
+                print('PLACEMENT_PREFLIGHT',r['id'],'tcp',tcp,'target',destination,'offset',slot['centre_x']-original['centre_x'],slot['y']-original['y'],flush=True)
+                r['drop_goal']=(pose(item)[0]+shift).tolist()
+                return destination,support_z,slot['y']
+            raise RuntimeError('Placement docking did not converge to a reachable actual grasp pose')
+
         def run_one_task(r):
             try:
                 event(r,'reserve_existing_environment_object')
                 available=cleanup.available(r['id']) if cleanup is not None else []
+                if cleanup is not None and args.only_object:
+                    available=[key for key in available if key.rsplit('/',1)[-1]==args.only_object]
                 if cleanup is not None:
                     own={str(group[0].GetPath()) for group in candidate_groups[r['id']]}
                     preferred=[key for key in available if key in own]
@@ -880,7 +963,9 @@ def main():
                     _,group,dock,grip,carry,yaw,rack_slot=yield from choose(r,groups)
                 except RuntimeError as exc:
                     if cleanup is not None and str(exc).startswith('No reachable floor object'):
-                        cleanup.reject(r['id'],available,'No currently feasible route, grasp and unoccupied rack slot')
+                        for key in available:
+                            cleanup.reject(r['id'],[key],r.get('placement_rejections',{}).get(key,
+                                'No currently feasible route, grasp and unoccupied rack slot'))
                         r['cleanup_waiting']=True
                         event(r,'cleanup_waiting')
                         return
@@ -994,6 +1079,8 @@ def main():
                 shift=np.array([dx,dy,dz])
                 destination=tcp+shift
                 r['drop_goal']=(body_center+shift).tolist()
+                if cleanup is not None:
+                    destination,support_z,rack_y=yield from fit_actual_placement(r,item,lo,hi,rack_yaw)
                 event(r,'place_on_existing_rack_pallet')
                 yield from arm_to(r,destination+[0,0,.06],closed=True)
                 yield from arm_to(r,destination,closed=True)
@@ -1060,6 +1147,11 @@ def main():
             index=0
             while cleanup is not None or index<args.tasks_per_robot:
                 if cleanup is not None:
+                    if args.only_object and any(item['state']=='stored' and key.rsplit('/',1)[-1]==args.only_object
+                                               for key,item in cleanup.items.items()):
+                        r['success']=True
+                        event(r,'diagnostic_object_stored')
+                        return
                     if cleanup.summary()['floor_clean']:
                         r['success']=True
                         event(r,'all_assigned_environment_tasks_complete')
@@ -1208,6 +1300,7 @@ def main():
                                          travel_distance_m=round(r['distance'],3),source_props=r.get('selected_props',[]),
                                          placement_error_m=r.get('placement_error'),rack_path=r.get('rack_path'),contact_check=r.get('contact_check'),lift_check=r.get('lift_check'),
                                          completed_jobs=r.get('completed_jobs',[]),
+                                         placement_adjustments=r.get('placement_adjustments',[]),
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()
@@ -1216,6 +1309,7 @@ def main():
                               'route_conflict_yields':route_reservations.denials,'route_events':route_reservations.events}
         if cleanup is not None:
             report['cleanup']=cleanup.summary()
+            report['cleanup']['diagnostic_object_filter']=args.only_object
             report['cleanup']['stop_reason']=cleanup_stop_reason or ('All registered objects stored' if report['cleanup']['floor_clean'] else
                 'Simulation limit, failed controller or unresolved objects')
             print('FLOOR CLEAN' if report['cleanup']['floor_clean'] else 'FLOOR NOT YET CLEAN',report['cleanup']['counts'],flush=True)
@@ -1234,6 +1328,8 @@ def main():
         if not args.headless and not args.exit_on_complete:
             print('Tasks ended. Close the window to exit.')
             while app.is_running():world.step(render=True)
+        if cleanup is not None and args.only_object:
+            return 0 if any(item['state']=='stored' and key.rsplit('/',1)[-1]==args.only_object for key,item in cleanup.items.items()) else 1
         return (0 if report['cleanup']['floor_clean'] else 1) if cleanup is not None else (0 if all(r['success'] for r in selected) else 1)
     except Exception:
         traceback.print_exc()
