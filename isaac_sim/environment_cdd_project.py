@@ -33,6 +33,7 @@ def arguments():
     p.add_argument('--camera', choices=('fixed',), default='fixed', help='Fixed perspective view; no camera tracking')
     p.add_argument('--robot',type=int,choices=range(1,6),help='Run just one robot for review')
     p.add_argument('--only-object',help='Diagnostic: attempt only this exact original prop name; not full floor cleanup')
+    p.add_argument('--inject-pickup-failure',action='store_true',help=argparse.SUPPRESS)
     p.add_argument('--tasks-per-robot',type=int,default=0,help='0: shared continuous floor cleanup; 1 or 2: original bounded role demo')
     p.add_argument('--serial-cleanup',action='store_true',help='Optional one-at-a-time debugging mode; default is concurrent')
     p.add_argument('--exit-on-complete', action='store_true')
@@ -57,6 +58,7 @@ def main():
     from isaacsim import SimulationApp
     app = SimulationApp({'headless': args.headless, 'width': 1600, 'height': 900})
     research=None
+    fault_injection={'used':False}
     try:
         import numpy as np
         import omni.usd
@@ -148,7 +150,7 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
-        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face
         route_reservations=RouteReservations()
         concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
@@ -459,6 +461,10 @@ def main():
                 if not waiting:
                     event(r,'yield_conflicting_route')
                     waiting=True
+                if attempt and attempt%16==0:
+                    if (yield from backoff_route(r)):
+                        try:route=planner(r).plan(pose(r['base'])[0][:2],goal)
+                        except ValueError:pass
                 drive(r,pose(r['base'])[0][:2],r['yaw'])
                 for _ in range(15):yield
                 if attempt%32==31:
@@ -466,24 +472,68 @@ def main():
                     except ValueError:pass
             raise RuntimeError('Conflicting route did not become available')
 
+        def backoff_route(r):
+            """Move away from a conflict through a short, reserved free route."""
+            if r.get('in_route_backoff'):return False
+            current=pose(r['base'])[0][:2].copy()
+            peers=[pose(other['base'])[0][:2].copy() for other in records if other is not r]
+            nearest=min(float(np.linalg.norm(current-p)) for p in peers)
+            nav=planner(r)
+            candidates=[]
+            for distance in (.5,1.,1.5):
+                for angle in np.linspace(0,2*math.pi,12,endpoint=False):
+                    target=current+distance*np.array([math.cos(angle),math.sin(angle)])
+                    separation=min(float(np.linalg.norm(target-p)) for p in peers)
+                    if separation>nearest+.15 and nav.clear(current,target) and traffic_clear(r,target):
+                        candidates.append((float(np.linalg.norm(target-r['home'][:2])),target))
+            for _,target in sorted(candidates,key=lambda item:item[0]):
+                positions={other['id']:(pose(other['base'])[0][:2],.70) for other in records}
+                path=[current.tolist(),target.tolist()]
+                if not route_reservations.reserve(r['id'],path,navigation_radius(r),positions,clock[0]/60,footprint=navigation_footprint(r)):continue
+                original_state=r['state']
+                event(r,'back_off_to_clear_peer_route')
+                r['nav_active']=True
+                r['in_route_backoff']=True
+                r['reserved_route']=path
+                try:
+                    yield from navigate_unreserved(r,target)
+                    r['route_backoffs']=r.get('route_backoffs',0)+1
+                finally:
+                    route_reservations.release(r['id'],clock[0]/60)
+                    r['nav_active']=False
+                    r['in_route_backoff']=False
+                    r.pop('reserved_route',None)
+                event(r,original_state)
+                return True
+            return False
+
         def navigate(r,goal,yaw=None):
             if not concurrent_cleanup:
                 yield from navigate_unreserved(r,goal,yaw)
                 return
             try:
                 yield from clear_initial_traffic_margin(r)
-                r['reservation_rotate']=yaw is not None and abs((yaw-r['yaw']+math.pi)%(2*math.pi)-math.pi)>.02
-                route=None
-                for attempt in range(40):
-                    try:
-                        route=planner(r).plan(pose(r['base'])[0][:2],goal)
-                        break
-                    except ValueError:
-                        drive(r,pose(r['base'])[0][:2],r['yaw'])
-                        for _ in range(30):yield
-                if route is None:raise RuntimeError('No collision-clear route became available')
-                r['reserved_route']=yield from reserve_navigation_route(r,route,goal)
-                yield from navigate_unreserved(r,goal,yaw)
+                for leg in range(1000):
+                    route=None
+                    for attempt in range(40):
+                        try:
+                            route=planner(r).plan(pose(r['base'])[0][:2],goal)
+                            break
+                        except ValueError:
+                            if attempt%8==7:yield from backoff_route(r)
+                            drive(r,pose(r['base'])[0][:2],r['yaw'])
+                            for _ in range(30):yield
+                    if route is None:raise RuntimeError('No collision-clear route became available')
+                    prefix=route_prefix(route,2.)
+                    final=math.dist(prefix[-1],goal)<.001
+                    r['reservation_rotate']=final and yaw is not None and abs((yaw-r['yaw']+math.pi)%(2*math.pi)-math.pi)>.02
+                    r['reserved_route']=yield from reserve_navigation_route(r,prefix,prefix[-1])
+                    yield from navigate_unreserved(r,prefix[-1],yaw if final else None)
+                    route_reservations.release(r['id'],clock[0]/60)
+                    r['nav_active']=False
+                    r.pop('reserved_route',None)
+                    if final:return
+                raise RuntimeError('Navigation rolling-horizon limit exceeded')
             finally:
                 route_reservations.release(r['id'],clock[0]/60)
                 r['nav_active']=False
@@ -628,16 +678,21 @@ def main():
                 primary=group[0]
                 transform=UsdGeom.XformCache().GetLocalToWorldTransform(primary)
                 half=float(UsdGeom.Cube(primary).GetSizeAttr().Get())/2
+                face,sign,axes=upper_face([tuple(transform.TransformDir(Gf.Vec3d(*(1. if i==j else 0. for j in range(3))))) for i in range(3)])
                 approaches=[]
                 for u in (-.45,-.30,0.,.30,.45):
                     for v in (-.45,-.30,0.,.30,.45):
-                        top=np.array(transform.Transform(Gf.Vec3d(u*2*half,v*2*half,half)))
+                        local=[0.,0.,0.]
+                        local[face]=sign*half
+                        local[axes[0]],local[axes[1]]=u*2*half,v*2*half
+                        top=np.array(transform.Transform(Gf.Vec3d(*local)))
                         for yaw in (0.,math.pi,math.pi/2,-math.pi/2):
                             direction=np.array([math.cos(yaw),math.sin(yaw)])
                             dock=top[:2]-.90*direction
                             point=top+np.array([0,0,.013])
                             approaches.append((dock,point,yaw))
-                for dock,point,yaw in approaches:
+                for approach_index,(dock,point,yaw) in enumerate(approaches):
+                    if approach_index and approach_index%12==0:yield
                     # A path cannot beat its straight-line lower bound. Avoid
                     # freezing the UI by running A* for thousands of farther
                     # grasp candidates after a nearer reachable task is found.
@@ -663,7 +718,7 @@ def main():
                     if not all(r['solver'].compute_inverse_kinematics('right_gripper',np.array(p),down(yaw))[1]
                                for p in (point,np.array(point)+[0,0,.06],carry)):
                         continue
-                    if not rack_ik_available(r,np.array(point),yaw,lo,hi):
+                    if not (yield from rack_ik_available(r,np.array(point),yaw,lo,hi)):
                         continue
                     try:
                         route = nav.plan(current[:2],dock)
@@ -794,6 +849,7 @@ def main():
             """A task is available only if its original prop can also be placed."""
             if cleanup is not None:
                 half=(source_hi-source_lo)/2
+                rack_checks=0
                 preferred={rack_specs[r['id']][0],next_rack_specs[r['id']][0]}
                 for pallet in sorted(cleanup_pallets,key=lambda p:p['path'] not in preferred):
                     plo,phi=pallet['lo'],pallet['hi']
@@ -818,7 +874,14 @@ def main():
                         cx=support_edge-toward[0]*.015+toward[0]*projected[0]
                         if r.get('candidate_kind')=='beam':cx=(plo[0]+phi[0])/2+.15
                         if not plo[0]-.015<=cx<=phi[0]+.015:continue
-                        for y in ys:
+                        xs=[float(cx)]
+                        if r.get('candidate_kind')!='beam':
+                            xlow,xhigh=plo[0]+projected[0]+.035,phi[0]-projected[0]-.035
+                            if xlow<=xhigh:
+                                xs+=sorted(set([float(xlow),float(xhigh)]+[float(v) for v in np.arange(xlow,xhigh+.001,.12)]),key=lambda x:abs(x-cx))
+                        for cx,y in ((x,y) for x in xs for y in ys):
+                            rack_checks+=1
+                            if rack_checks%16==0:yield
                             box=(float(cx-projected[0]),float(y-projected[1]),float(cx+projected[0]),float(y+projected[1]))
                             if not cleanup.slot_free(box):continue
                             dock=np.array([edge-toward[0]*.70,y])
@@ -831,6 +894,7 @@ def main():
                             centre=np.array([cx,y,support_z+.003+projected[2]])
                             target=centre+rotation@(grip-(source_lo+source_hi)/2)
                             shoulder=np.array([*(dock+.30*toward),r['shoulder_z']])
+                            if float(np.linalg.norm(target-shoulder))>1.2:continue
                             r['solver'].set_robot_base_pose(shoulder,np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
                             if all(r['solver'].compute_inverse_kinematics('right_gripper',p,down(yaw))[1]
                                    for p in (target,target+[0,0,.06],target+[0,0,.15])):
@@ -947,12 +1011,14 @@ def main():
                 return destination,support_z,slot['y']
             raise RuntimeError('Placement docking did not converge to a reachable actual grasp pose')
 
+        def available_cleanup(r):
+            keys=cleanup.available(r['id'])
+            return [key for key in keys if key.rsplit('/',1)[-1]==args.only_object] if args.only_object else keys
+
         def run_one_task(r):
             try:
                 event(r,'reserve_existing_environment_object')
-                available=cleanup.available(r['id']) if cleanup is not None else []
-                if cleanup is not None and args.only_object:
-                    available=[key for key in available if key.rsplit('/',1)[-1]==args.only_object]
+                available=available_cleanup(r) if cleanup is not None else []
                 if cleanup is not None:
                     own={str(group[0].GetPath()) for group in candidate_groups[r['id']]}
                     preferred=[key for key in available if key in own]
@@ -1018,6 +1084,10 @@ def main():
                 attach(task_root+'/Grasp_%02d'%r['id'],item,r['hand'])
                 UsdPhysics.RigidBodyAPI(item).CreateKinematicEnabledAttr(False)
                 r['carrying']=True
+                if args.inject_pickup_failure and not fault_injection['used']:
+                    fault_injection['used']=True
+                    r['injected_pickup_failure']=True
+                    raise RuntimeError('Injected pickup failure for verified recovery test')
                 before=pose(item)[0].copy()
                 relative=matrix(item)*matrix(r['hand']).GetInverse()
                 yield from arm_to(r,grip+[0,0,.07],closed=True)
@@ -1142,6 +1212,92 @@ def main():
                 event(r,'failed')
                 print('FAILED',r['id'],exc)
                 traceback.print_exc()
+        def recover_floor_payload(r):
+            """Physical release, settle and pose-preserving source handoff."""
+            item=r.get('item')
+            if item is None or not item.IsValid():return False
+            path=str(item.GetPath())
+            if path not in live:return False
+            event(r,'release_failed_load_for_floor_recovery')
+            stage.RemovePrim(task_root+'/Grasp_%02d'%r['id'])
+            UsdPhysics.RigidBodyAPI(item).CreateKinematicEnabledAttr(False)
+            UsdPhysics.FilteredPairsAPI(item).GetFilteredPairsRel().SetTargets([])
+            r['carrying']=False
+            if item not in stored_props:stored_props.append(item)
+            r['robot'].apply_action(ArticulationAction(joint_positions=np.array([.04,.04]),joint_indices=r['fingers']))
+            r['robot'].apply_action(ArticulationAction(joint_positions=folded,joint_indices=r['arm']))
+            stable=0
+            for _ in range(360):
+                yield
+                speed=float(np.linalg.norm(live[path].get_linear_velocity()))
+                stable=stable+1 if speed<.03 else 0
+                if stable>=45:break
+            low,high=exact_payload_bounds(item)
+            slot=r.get('cleanup_slot')
+            lift=r.get('lift_check') or {}
+            if stable>=45 and slot and lift.get('rise_m',0.)>=.04 and lift.get('relative_drift_m',1.)<=.005:
+                pallet=stage.GetPrimAtPath(slot['path'])
+                plo,phi=bounds([pallet])
+                final=pose(item)[0]
+                gap=float(low[2]-slot['support_z'])
+                if np.all(final[:2]>=plo[:2]-.015) and np.all(final[:2]<=phi[:2]+.015) and abs(gap)<.025 and abs(final[1]-slot['y'])<.35:
+                    box=(float(low[0]),float(low[1]),float(high[0]),float(high[1]))
+                    try:cleanup.recovered_storage(r['cleanup_id'],r.get('contact_check',{}).get('verified',False),gap,speed,box)
+                    except ValueError:pass
+                    else:
+                        target=np.array(r.get('drop_goal',[slot['centre_x'],slot['y'],slot['support_z']+(high[2]-low[2])/2]))
+                        r['completed_jobs'].append(dict(source_props=r['selected_props'],rack_path=slot['path'],rack_slot_y=slot['y'],
+                            support_z=slot['support_z'],cleanup_object_id=r['cleanup_id'],object_kind=cleanup.items[r['cleanup_id']]['kind'],
+                            expected_position=target.tolist(),payload_path=path,contact_check=r['contact_check'],lift_check=lift,
+                            placement_error_m=float(np.linalg.norm(final-target)),completion_method='measured supported settling after recovery release'))
+                        r.setdefault('recoveries',[]).append({'time':clock[0]/60,'object':r['cleanup_id'],'method':'verified rack settling','support_gap_m':gap,'settled_speed_m_s':speed})
+                        event(r,'completed_original_prop_on_rack')
+                        r.update(item=None,originals=[],carrying=False,destination_shelf=None,cleanup_manipulated=False)
+                        return True
+            if stable<45 or not -.05<=low[2]<=.15:
+                event(r,'recovery_requires_operator_load_not_stable_on_floor')
+                return False
+            originals=r['originals']
+            parts=[stage.GetPrimAtPath(path+'/Part_%02d'%i) for i in range(len(originals))]
+            if not originals or not all(parts):return False
+            cache=UsdGeom.XformCache()
+            transforms=[cache.GetLocalToWorldTransform(part) for part in parts]
+            for original,transform in zip(originals,transforms):
+                parent=cache.GetLocalToWorldTransform(original.GetParent())
+                UsdGeom.Xformable(original).MakeMatrixXform().Set(transform*parent.GetInverse())
+            error=0.
+            cache=UsdGeom.XformCache()
+            for original,part,transform in zip(originals,parts,transforms):
+                actual=cache.GetLocalToWorldTransform(original)
+                half=float(UsdGeom.Cube(part).GetSizeAttr().Get())/2
+                for x in (-half,half):
+                    for y in (-half,half):
+                        for z in (-half,half):
+                            point=Gf.Vec3d(x,y,z)
+                            error=max(error,float((actual.Transform(point)-transform.Transform(point)).GetLength()))
+            if error>.002:return False
+            for original in originals:
+                UsdGeom.Imageable(original).MakeVisible()
+                UsdPhysics.CollisionAPI.Apply(original).CreateCollisionEnabledAttr(True)
+            stored_props.remove(item)
+            # Keep the rigid-body/shape prims allocated: deleting them while
+            # other workers own tensor views invalidates the whole simulation.
+            # This inactive container has no visible or colliding duplicate.
+            UsdPhysics.RigidBodyAPI(item).CreateKinematicEnabledAttr(True)
+            for part in parts:UsdPhysics.CollisionAPI(part).CreateCollisionEnabledAttr(False)
+            UsdGeom.Imageable(item).MakeInvisible()
+            pose_cache.clear();bounds_cache.clear()
+            # Let PhysX apply the source/temporary collider handoff before
+            # exposing the object to another robot's raycast/grasp preflight.
+            for _ in range(3):yield
+            cleanup.recovered(r['cleanup_id'],error,speed,True)
+            reserved.difference_update(r['selected_props'])
+            r.setdefault('recoveries',[]).append({'time':clock[0]/60,'object':r['cleanup_id'],
+                'pose_handoff_error_m':error,'settled_speed_m_s':speed,'floor_height_m':float(low[2])})
+            r.update(item=None,originals=[],carrying=False,destination_shelf=None,cleanup_manipulated=False)
+            event(r,'floor_recovery_verified_object_requeued')
+            return True
+
         def run_task(r):
             r['completed_jobs']=[]
             index=0
@@ -1156,7 +1312,7 @@ def main():
                         r['success']=True
                         event(r,'all_assigned_environment_tasks_complete')
                         return
-                    if not cleanup.available(r['id']):
+                    if not available_cleanup(r):
                         r['cleanup_waiting']=True
                         if r['state']!='cleanup_waiting':event(r,'cleanup_waiting')
                         yield
@@ -1166,14 +1322,19 @@ def main():
                     r['cleanup_manipulated']=False
                 r['task_index']=index
                 r['success']=False
+                for field in ('lift_check','contact_check','drop_goal','placement_error'):r.pop(field,None)
                 yield from run_one_task(r)
                 if cleanup is not None and r.get('cleanup_waiting'):
                     yield
                     continue
                 if not r['success']:
-                    if cleanup is None or r.get('cleanup_manipulated',False):return
+                    if cleanup is None:return
+                    if r.get('cleanup_manipulated',False):
+                        if not (yield from recover_floor_payload(r)):return
+                        index+=1
                     # Source geometry is still static and unchanged. Return
                     # safely before this robot tries another pending object.
+                    recovery_start=pose(r['base'])[0][:2].copy()
                     r['robot'].apply_action(ArticulationAction(joint_positions=folded,joint_indices=r['arm']))
                     for _ in range(90):yield
                     r.update(item=None,originals=[],carrying=False,destination_shelf=None)
@@ -1182,9 +1343,11 @@ def main():
                         yield from navigate(r,r['home'][:2],yaw=0.)
                     except Exception:
                         cleanup_transit.release(r['id'])
-                        return
+                        event(r,'home_route_blocked_try_other_available_work')
                     cleanup_transit.release(r['id'])
                     r['failure']=None
+                    if float(np.linalg.norm(pose(r['base'])[0][:2]-recovery_start))>.1:cleanup.epoch+=1
+                    yield
                     continue
                 if r.get('no_more_reachable_props'):return
                 try:
@@ -1202,10 +1365,15 @@ def main():
                     r['success']=False
                     r['failure']='Return navigation: '+str(exc)
                     event(r,'failed')
-                    return
+                    if cleanup is None:return
+                    # The placement is already verified. A blocked return
+                    # route must not permanently disable an empty-handed robot.
+                    r.update(item=None,originals=[],carrying=False,destination_shelf=None,success=True,failure=None)
+                    event(r,'return_route_blocked_request_alternative_work')
                 if left_corridor_owner[0]==r['id']:left_corridor_owner[0]=None
                 if rear_zone_owner[0]==r['id']:rear_zone_owner[0]=None
                 cleanup_transit.release(r['id'])
+                if cleanup is not None:cleanup.epoch+=1
                 index+=1
                 if cleanup is not None or index<args.tasks_per_robot:
                     event(r,'request_next_available_original_prop')
@@ -1226,7 +1394,10 @@ def main():
                 except StopIteration:
                     del workers[robot_id]
             if cleanup is not None and workers and all(r.get('cleanup_waiting',False) for r in selected if r['id'] in workers):
-                if not any(item['state']=='assigned' for item in cleanup.items.values()):
+                # Exhausting a robot's preferred family does not mean the
+                # shared pool is exhausted. Let its next turn try other kinds.
+                if not any(item['state']=='assigned' for item in cleanup.items.values()) and not any(
+                        available_cleanup(r) for r in selected if r['id'] in workers):
                     cleanup_stop_reason='No currently feasible pickup and free rack slot; remaining objects are not clean'
                     break
             if workers:
@@ -1246,11 +1417,14 @@ def main():
                     state=cleanup.summary()
                     if ui_cleanup_summary is not None:
                         active=(','.join('%02d'%rid for rid in route_reservations.routes) or 'manipulating / waiting') if concurrent_cleanup else ('Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting')
-                        ui_cleanup_summary.text='Floor cleanup | stored %d/%d | active: %s | pending %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,state['counts']['pending'],state['counts']['failed'])
+                        ui_cleanup_summary.text='Stored %d/%d | active: %s | pending %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,state['counts']['pending'],state['counts']['blocked'],state['counts']['failed'])
                     if clock[0]%300==0:
                         args.report.parent.mkdir(parents=True,exist_ok=True)
                         args.report.with_suffix('.cleanup.json').write_text(json.dumps(dict(state,simulation_time=clock[0]/60,
-                            aisle_owner=cleanup_transit.owner,aisle_waiting=cleanup_transit.queue),indent=2),encoding='utf-8')
+                            aisle_owner=cleanup_transit.owner,aisle_waiting=cleanup_transit.queue,active_navigation=list(route_reservations.routes),
+                            robot_states=[{'robot':r['id'],'task':r['task'],'state':r['state'],'carrying':r.get('carrying',False),
+                                'position':pose(r['base'])[0].tolist(),'stored_jobs':len(r.get('completed_jobs',[])),
+                                'recoveries':len(r.get('recoveries',[])),'failure':r.get('failure')} for r in selected]),indent=2),encoding='utf-8')
                 if clock[0]%600==0:
                     print('PROGRESS',clock[0]/60,[(r['id'],r['state'],tuple(round(float(v),2) for v in pose(r['base'])[0][:2])) for r in selected])
         for r in selected:
@@ -1301,6 +1475,7 @@ def main():
                                          placement_error_m=r.get('placement_error'),rack_path=r.get('rack_path'),contact_check=r.get('contact_check'),lift_check=r.get('lift_check'),
                                          completed_jobs=r.get('completed_jobs',[]),
                                          placement_adjustments=r.get('placement_adjustments',[]),
+                                         recoveries=r.get('recoveries',[]),route_backoffs=r.get('route_backoffs',0),
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()

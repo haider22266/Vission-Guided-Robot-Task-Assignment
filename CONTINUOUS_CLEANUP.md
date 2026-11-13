@@ -22,10 +22,11 @@ duplicated, removed from the simulation or reported as stored to make progress.
 Oversized beams are screened before pickup: unsupported depth is limited and
 the beam footprint must fit the pallet's usable length. In particular,
 `Fallen_Rack_Beam_02` caused a placement IK/tracking failure in the earlier run.
-It now stays pending with a "needs longer storage support" reason instead of
+It now stays explicitly blocked with a "needs longer storage support" reason instead of
 being carried into an unusable rack position. Robots can select other work;
 this does not claim that the oversized beam has been cleaned. It needs a
-suitable long-load storage destination to complete that job.
+suitable long-load storage destination to complete that job. Per the requested
+configuration, no additional racks are added.
 
 Before placing an eligible load, the controller recomputes the target from the
 measured carried-object bounds and gripper pose, checking sampled approach,
@@ -42,9 +43,10 @@ and settling, then backs out and requests another job. Completed objects stay
 on the racks. Queue progress causes previously blocked pending jobs to be
 reconsidered. Robots now work **concurrently by default**. Independent routes
 can run at the same time, and one robot can manipulate an object while others
-travel. A spatial reservation encloses each navigation path, robot and carried
-load. A conflicting path yields until space becomes available; reaching a goal
-releases that navigation reservation, without waiting for the whole task to end.
+travel. A rolling reservation encloses a short, approximately two-metre route
+prefix, the robot and its carried load. Used space is released before the next
+prefix is requested, rather than reserving the entire aisle to a distant goal.
+A conflicting path yields, and short reserved back-off moves can clear peers.
 Stationary peers, shelves, floor clutter and stored objects remain planning
 obstacles. The live per-frame peer/load overlap check and local avoidance remain
 active. The viewport camera stays fixed.
@@ -71,17 +73,32 @@ older two-object-per-role experiment, pass `-TasksPerRobot 2 -Duration 600`.
 Progress is displayed in the task window and saved every five simulated
 seconds to `isaac_sim/scenes/environment_cdd_report.cleanup.json`. The full
 final report remains `environment_cdd_report.json`, with a `cleanup` section:
-`floor_clean`, total/pending/assigned/stored/failed counts, remaining object
+`floor_clean`, total/pending/assigned/stored/blocked/failed counts, remaining object
 paths/reasons, and reserved rack footprints. Vision predictions retain their
 separate `.vision.jsonl` log.
 
 "Floor clean" means every registered object has a verified rack placement and
 the final stored-object check still passes. Unreachable objects, insufficient
 rack space, unsupported components or manipulation failures keep this flag
-false. When no active robot can make further progress, the controller stops
+false. Oversized beams stay explicitly blocked, as requested; no new racks are
+added. When no active robot can make further progress, the controller stops
 with the remaining work listed. It does not claim full cleanup because workers
-are idle. A manipulated object that fails verification is quarantined rather
-than being assigned again through an obsolete source path. This mode remains
+are idle. Failed loads are first released through physics, then checked for
+settling. A stable floor load can be requeued only after its original geometry
+is restored at the exact measured pose (under 2 mm handoff error, speed under
+0.05 m/s). Temporary payload body/shape prims remain allocated but hidden,
+kinematic and non-colliding, to preserve Isaac's live tensor views. This is not
+a successful placement and does not increase the stored count. Another robot
+must perform and verify the pickup and placement normally. If a released load
+settles on its assigned rack, contact/lift, support, velocity and exclusive-space
+checks must all pass before storage is accepted. Placement error is measured
+against the planned target, not replaced with zero.
+
+Failed approach or return-route attempts no longer permanently disable an
+empty-handed robot. Pending grasps are reconsidered when robots return home
+and free access. Three repeated verified recoveries block an object for operator
+review rather than retrying forever. Loads that cannot be safely recovered stay
+failed with their reason. This mode remains
 an assisted-grasp simulation controller and a priority baseline, not QMIX.
 
 The earlier seven-placement result in `reports/` belongs to the bounded role
@@ -102,5 +119,23 @@ time-stamped reservation events. In the 110-second concurrent test, all five
 robots started navigation; peak simultaneous moving robots was three, with
 5,604 overlapping-motion physics frames. Three objects remained verified on
 racks. This motion test used explicit mock perception; the learned classifier
-connection was verified in the earlier separate run. All 64 automated tests
-pass. Full cleanup remains unverified.
+connection was verified in the earlier separate run.
+
+The recovery regression deliberately interrupts one verified pickup. Robot 01
+physically releases and settles the object, then Robot 02 collects that same
+object and completes its rack placement with 5.1 mm measured error. The final
+check confirms it remains stored. No robot failure remains in this diagnostic;
+the other 87 scene objects are outside its single-object test scope. See
+`reports/recovery_controller_validation.json`. All 77 automated tests pass.
+Full cleanup remains unverified.
+
+The subsequent 650-second concurrent mock-perception fleet test verified 13
+objects still on their racks at final recheck. Peak simultaneous moving robots
+was five (26,699 overlapping-motion frames). Three real failed-load releases
+settled on the floor and were requeued with zero measured geometry-handoff
+error. At the time limit, 62 objects remained pending, 11 oversized beams were
+blocked, and two active manipulated loads were quarantined as failed because
+the test ended. All five worker reports explicitly record that time limit.
+This is an incomplete cleanup result, not an all-tasks-success result. The
+later preferred-family/shared-pool early-stop guard is covered by the updated
+logic checks; that final guard was not loaded into this already-running test.

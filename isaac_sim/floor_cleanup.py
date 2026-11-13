@@ -44,6 +44,12 @@ def beam_fits_support(size,pallet_size):
     return size[0]<=pallet_size[0]+.50 and size[1]<=pallet_size[1]-.06
 
 
+def upper_face(directions):
+    """Cube-local face that points most upward after tipping/rotation."""
+    axis=max(range(3),key=lambda i:abs(directions[i][2])/max(1e-12,math.sqrt(sum(v*v for v in directions[i]))))
+    return axis,1. if directions[axis][2]>=0 else -1.,[i for i in range(3) if i!=axis]
+
+
 class CleanupQueue:
     def __init__(self,groups,unknown=(),static_occupancy=()):
         self.items={g['id']:{'id':g['id'],'kind':g['kind'],'paths':g['paths'],'state':'pending',
@@ -58,13 +64,15 @@ class CleanupQueue:
 
     def available(self,robot):
         return [key for key,item in self.items.items()
-                if item['state']=='pending' and item['attempts'].get(robot)!=self.epoch]
+                if item['state']=='pending' and item['attempts'].get(robot)!=self.epoch
+                and not (item.get('avoid_robot')==robot and self.epoch<=item.get('avoid_until_epoch',-1))]
 
     def reject(self,robot,keys,reason):
         for key in keys:
             if self.items[key]['state']=='pending':
                 self.items[key]['attempts'][robot]=self.epoch
                 self.items[key]['reason']=reason
+                if reason.startswith('Oversized beam:'):self.items[key]['state']='blocked'
 
     def slot_free(self,box):
         return not any(overlaps(box,other) for other in self.static_occupancy) and not any(
@@ -122,9 +130,35 @@ class CleanupQueue:
             self.epoch+=1
         item['reason']=reason
 
+    def recovered(self,key,pose_error,speed,on_floor):
+        """Requeue only after a physical release/settle and exact geometry handoff."""
+        item=self.items[key]
+        if item['state']!='failed' or not on_floor or not all(math.isfinite(v) for v in (pose_error,speed)) or pose_error>.002 or speed>.05:
+            raise ValueError('Verified stable floor recovery required before reassignment')
+        self.slots.pop(item.get('lease'),None)
+        item.pop('lease',None)
+        item['recoveries']=item.get('recoveries',0)+1
+        self.epoch+=1
+        item['attempts'][item['robot']]=self.epoch
+        item['avoid_robot']=item['robot']
+        item['avoid_until_epoch']=self.epoch+1
+        item.update(state='pending' if item['recoveries']<3 else 'blocked',robot=None,
+                    reason='Recovered physically to floor; retry with another grasp/robot' if item['recoveries']<3 else 'Repeated manipulation failures; needs operator review')
+
+    def recovered_storage(self,key,contact_verified,support_gap,speed,box):
+        item=self.items[key]
+        if item['state']!='failed' or not contact_verified or not all(math.isfinite(v) for v in (support_gap,speed)) or abs(support_gap)>.025 or speed>.05:
+            raise ValueError('Verified contact, support and settling required')
+        item['state']='assigned'
+        try:self.complete(key,True,box)
+        except Exception:
+            item['state']='failed'
+            raise
+        item['reason']='Verified supported rack settling after recovery release'
+
     def summary(self):
         counts={state:sum(item['state']==state for item in self.items.values())
-                for state in ('pending','assigned','stored','failed')}
+                for state in ('pending','assigned','stored','blocked','failed')}
         return {'mode':'continuous shared floor cleanup','floor_clean':all(item['state']=='stored' for item in self.items.values()) and not self.unknown,
                 'counts':counts,'total_objects':len(self.items),'unregistered_components':self.unknown,
                 'remaining_objects':[item for item in self.items.values() if item['state']!='stored'],
@@ -158,6 +192,22 @@ def _point_segment_distance(p,a,b):
     length=dx*dx+dy*dy
     t=max(0.,min(1.,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/length)) if length else 0.
     return math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy)
+
+
+def route_prefix(path,distance=2.):
+    """Rolling reservation horizon; release used space before reserving more."""
+    points=[tuple(float(v) for v in p[:2]) for p in path]
+    if not points or distance<=0:raise ValueError('Positive route horizon and nonempty path required')
+    result=[points[0]]
+    for a,b in zip(points,points[1:]):
+        length=math.dist(a,b)
+        if length>distance:
+            result.append(tuple(a[i]+(b[i]-a[i])*distance/length for i in (0,1)))
+            return result
+        result.append(b)
+        distance-=length
+        if distance<1e-8:return result
+    return result
 
 
 def _segment_distance(a,b,c,d):

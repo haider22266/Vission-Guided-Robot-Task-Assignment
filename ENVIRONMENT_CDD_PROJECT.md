@@ -84,7 +84,12 @@ object and rack reservations. This is a **priority baseline**, not QMIX.
 Continuous mode first prefers each robot's original task family, then lets
 idle robots take other available objects from the shared cleanup queue.
 It is separate from the ROS 2 nodes in `ROS2_PIPELINE.md`; this entry point
-does not yet expose ROS control, learned role switching or a failure monitor.
+does not yet expose ROS control, learned role switching or a robot-health
+heartbeat monitor. The continuous controller now recovers physically settled
+loads after eligible manipulation failures and makes them available for
+another robot. This recovery is separate from ROS health-based reassignment.
+Only existing racks are used; oversized beams are explicitly blocked.
+See `CONTINUOUS_CLEANUP.md` and `reports/recovery_controller_validation.json`.
 Human Damage is an area clue, not a localized person detection, and visual
 scores do not constitute object-specific evidence or a verified safe route.
 

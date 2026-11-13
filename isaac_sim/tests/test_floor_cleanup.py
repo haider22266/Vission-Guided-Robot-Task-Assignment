@@ -3,11 +3,29 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support
+from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face
+
+
+@pytest.mark.parametrize('directions,expected',[
+    ([(1,0,0),(0,1,0),(0,0,1)],(2,1.)),
+    ([(0,0,-2),(0,3,0),(4,0,0)],(0,-1.)),
+    ([(10,0,1),(0,0,.2),(0,1,0)],(1,1.)),
+])
+def test_grasp_selects_actual_upper_face_after_tipping(directions,expected):
+    axis,sign,tangent_axes=upper_face(directions)
+    assert (axis,sign)==expected
+    assert sorted([axis]+tangent_axes)==[0,1,2]
 
 
 def groups():
     return [{'id':x,'kind':'carton','paths':[x]} for x in ('a','b')]
+
+
+def test_rejecting_preferred_object_keeps_shared_pool_available():
+    queue=CleanupQueue(groups())
+    queue.reject(1,['a'],'No feasible preferred pickup')
+    assert queue.available(1)==['b']
+    assert queue.summary()['counts']['pending']==2
 
 
 def test_exclusive_objects_and_physical_rack_footprints():
@@ -94,6 +112,50 @@ def test_oversized_beam_requires_longer_support_before_any_pickup():
     assert not beam_fits_support((2.60,1.12),(1.2,1.2))
     assert not beam_fits_support((1.12,2.60),(1.2,1.2))
     assert beam_fits_support((1.25,.18),(1.,1.2))
+
+
+def test_recovery_requires_real_floor_settling_and_releases_stale_reservation():
+    queue=CleanupQueue(groups())
+    queue.claim('a',1,{'box':(0,0,1,1)})
+    queue.fail('a','Navigation blocked while carrying')
+    for error,speed,on_floor in ((.1,0.,True),(0.,1.,True),(0.,0.,False)):
+        with pytest.raises(ValueError):queue.recovered('a',error,speed,on_floor)
+    queue.recovered('a',.0001,.01,True)
+    assert queue.items['a']['state']=='pending'
+    assert queue.slot_free((0,0,1,1))
+    assert 'a' in queue.available(2)
+    assert 'a' not in queue.available(1)
+    assert not queue.summary()['floor_clean']
+    queue.epoch+=1  # Returning home must still give a different robot a turn.
+    assert 'a' not in queue.available(1) and 'a' in queue.available(2)
+
+
+def test_rolling_routes_release_long_future_corridors():
+    route=[(0,0),(0,1),(4,1)]
+    assert route_prefix(route,2)==[(0.,0.),(0.,1.),(1.,1.)]
+    assert route_prefix(route,10)==[(0.,0.),(0.,1.),(4.,1.)]
+    assert route==[(0,0),(0,1),(4,1)]
+
+
+def test_oversized_items_are_blocked_not_silently_stored():
+    queue=CleanupQueue(groups())
+    queue.reject(1,['a'],'Oversized beam: needs longer storage')
+    assert queue.summary()['counts']['blocked']==1
+    assert queue.summary()['counts']['pending']==1
+    assert queue.available(2)==['b']
+    assert not queue.summary()['floor_clean']
+
+
+def test_recovered_storage_needs_contact_support_settling_and_reserved_space():
+    queue=CleanupQueue(groups())
+    queue.claim('a',1,{'box':(0,0,1,1)})
+    queue.fail('a','Arm retreat failed after release')
+    for contact,gap,speed in ((False,0.,0.),(True,.2,0.),(True,0.,1.)):
+        with pytest.raises(ValueError):queue.recovered_storage('a',contact,gap,speed,(0,0,1,1))
+    assert queue.items['a']['state']=='failed'
+    queue.recovered_storage('a',True,.002,.01,(0,0,1,1))
+    assert queue.items['a']['state']=='stored'
+    assert queue.summary()['counts']['stored']==1
 
 
 def test_fifo_aisle_turns_prevent_head_on_trips_and_starvation():
