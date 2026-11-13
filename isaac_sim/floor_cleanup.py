@@ -3,6 +3,10 @@ import uuid
 import math
 
 
+class TrafficDeferred(RuntimeError):
+    """A transient route conflict; not evidence of failed manipulation."""
+
+
 def floor_groups(prims):
     """Group original compound props; never treat tape/tool parts as new jobs."""
     by_name={p.GetName():p for p in prims}

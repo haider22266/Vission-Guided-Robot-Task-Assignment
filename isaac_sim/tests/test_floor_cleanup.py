@@ -37,6 +37,25 @@ def test_rejecting_preferred_object_keeps_shared_pool_available():
     assert queue.summary()['counts']['pending']==2
 
 
+def test_shorter_route_can_progress_without_reserving_blocked_future_space():
+    routes=RouteReservations()
+    path=[(0.,0.),(2.,0.)]
+    peers={2:((2.,0.),.6)}
+    assert not routes.reserve(1,path,.6,peers)
+    prefix=route_prefix(path,.5)
+    assert routes.reserve(1,prefix,.6,peers)
+    assert prefix[-1]==(.5,0.)  # Execute the granted endpoint, not the old goal.
+
+
+def test_traffic_before_pickup_releases_object_and_slot_for_other_robot():
+    queue=CleanupQueue(groups())
+    queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})
+    queue.fail('a','Traffic deferred',before_manipulation=True)
+    assert queue.summary()['counts']['failed']==0
+    assert 'a' in queue.available(2) and 'b' in queue.available(1)
+    queue.claim('a',2,{'box':(0,0,1,1),'path':'rack'})
+
+
 def test_exclusive_objects_and_physical_rack_footprints():
     queue=CleanupQueue(groups())
     queue.claim('a',1,{'box':(0,0,1,1),'path':'rack_a'})

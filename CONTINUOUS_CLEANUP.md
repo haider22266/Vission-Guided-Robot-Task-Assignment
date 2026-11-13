@@ -66,6 +66,18 @@ travel. A rolling reservation encloses a short, approximately two-metre route
 prefix, the robot and its carried load. Used space is released before the next
 prefix is requested, rather than reserving the entire aisle to a distant goal.
 A conflicting path yields, and short reserved back-off moves can clear peers.
+When a two-metre prefix conflicts, the outer navigator may reserve a shorter
+1.2, 0.8 or 0.5 metre prefix and drives only to the granted endpoint before
+replanning. Clearance and payload footprints are unchanged. Internal local
+replans retain their complete current-leg destination. An unstarted pickup
+defers after 48 wait attempts (normally 12 seconds, excluding back-off motion),
+releases its object/rack lease, and requests other work after a staggered wait.
+It does not start another home-route wait on the same conflict. A carried load
+has a longer wait budget and retains the verified recovery requirement.
+Reports count `traffic_deferrals`; transient contention is logged as
+`TRAFFIC DEFERRED` rather than a manipulation-failure traceback. The updated
+81-test suite verifies short-route reservations and lease release, but this
+change has not yet been validated in a live multi-robot Isaac run.
 Stationary peers, shelves, floor clutter and stored objects remain planning
 obstacles. The live per-frame peer/load overlap check and local avoidance remain
 active. The viewport camera stays fixed.

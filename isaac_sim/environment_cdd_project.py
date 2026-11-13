@@ -151,7 +151,7 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
-        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred
         route_reservations=RouteReservations()
         concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
@@ -443,23 +443,24 @@ def main():
                     drive(r,command,r['yaw'])
                     yield
 
-        def reserve_navigation_route(r,route,goal):
+        def reserve_navigation_route(r,route,goal,partial=False):
             route_reservations.release(r['id'],clock[0]/60)
             r['nav_active']=False
             original_state=r['state']
             waiting=False
-            for attempt in range(600):
+            for attempt in range(240 if r.get('carrying') else 48):
                 positions={other['id']:(pose(other['base'])[0][:2],.70) for other in records}
                 occupied=[]
                 for other in records:
                     if other is not r and other.get('carrying') and other.get('item'):
                         lo,hi=bounds([other['item']]);occupied.append((float(lo[0]-.06),float(lo[1]-.06),float(hi[0]+.06),float(hi[1]+.06)))
-                if route_reservations.reserve(r['id'],route,navigation_radius(r),positions,clock[0]/60,
+                candidate=route_prefix(route,(2.,1.2,.8,.5)[attempt%4]) if partial else route
+                if route_reservations.reserve(r['id'],candidate,navigation_radius(r),positions,clock[0]/60,
                     footprint=navigation_footprint(r),occupied_boxes=occupied,
                     goal_radius=navigation_radius(r) if r.get('reservation_rotate') else None):
                     r['nav_active']=True
                     if waiting:event(r,original_state)
-                    return route
+                    return candidate
                 if not waiting:
                     event(r,'yield_conflicting_route')
                     waiting=True
@@ -472,7 +473,7 @@ def main():
                 if attempt%32==31:
                     try:route=planner(r).plan(pose(r['base'])[0][:2],goal)
                     except ValueError:pass
-            raise RuntimeError('Conflicting route did not become available')
+            raise TrafficDeferred('Traffic remains blocked; release this route and defer the task')
 
         def backoff_route(r):
             """Move away from a conflict through a short, reserved free route."""
@@ -525,12 +526,14 @@ def main():
                             if attempt%8==7:yield from backoff_route(r)
                             drive(r,pose(r['base'])[0][:2],r['yaw'])
                             for _ in range(30):yield
-                    if route is None:raise RuntimeError('No collision-clear route became available')
+                    if route is None:raise TrafficDeferred('No collision-clear route currently available')
                     prefix=route_prefix(route,2.)
                     final=math.dist(prefix[-1],goal)<.001
                     r['reservation_rotate']=final and yaw is not None and abs((yaw-r['yaw']+math.pi)%(2*math.pi)-math.pi)>.02
-                    r['reserved_route']=yield from reserve_navigation_route(r,prefix,prefix[-1])
-                    yield from navigate_unreserved(r,prefix[-1],yaw if final else None)
+                    r['reserved_route']=yield from reserve_navigation_route(r,prefix,prefix[-1],partial=True)
+                    leg_goal=r['reserved_route'][-1]
+                    final=math.dist(leg_goal,goal)<.001
+                    yield from navigate_unreserved(r,leg_goal,yaw if final else None)
                     route_reservations.release(r['id'],clock[0]/60)
                     r['nav_active']=False
                     r.pop('reserved_route',None)
@@ -1263,6 +1266,12 @@ def main():
                 if left_corridor_owner[0]==r['id']:left_corridor_owner[0]=None
                 if r['id'] in left_corridor_queue:left_corridor_queue.remove(r['id'])
                 r['failure']=str(exc)
+                if isinstance(exc,TrafficDeferred) and cleanup is not None:
+                    r['traffic_deferrals']=r.get('traffic_deferrals',0)+1
+                    r['traffic_deferred']=True
+                    event(r,'traffic_deferred_recover_load' if r.get('cleanup_manipulated',False) else 'traffic_deferred_release_unstarted_task')
+                    print('TRAFFIC DEFERRED',r['id'],exc,flush=True)
+                    return
                 event(r,'failed')
                 print('FAILED',r['id'],exc)
                 traceback.print_exc()
@@ -1383,9 +1392,20 @@ def main():
                     continue
                 if not r['success']:
                     if cleanup is None:return
+                    traffic_deferred=r.pop('traffic_deferred',False)
                     if r.get('cleanup_manipulated',False):
                         if not (yield from recover_floor_payload(r)):return
                         index+=1
+                    elif traffic_deferred:
+                        # No object was touched. The lease was already released;
+                        # do not start another home-route wait on the same peers.
+                        r['failure']=None
+                        try:yield from backoff_route(r)
+                        except RuntimeError:
+                            event(r,'traffic_backoff_unavailable_wait_for_peer')
+                        for _ in range(30+17*r['id']):yield
+                        event(r,'request_alternative_task_after_traffic')
+                        continue
                     # Source geometry is still static and unchanged. Return
                     # safely before this robot tries another pending object.
                     recovery_start=pose(r['base'])[0][:2].copy()
@@ -1530,6 +1550,7 @@ def main():
                                          completed_jobs=r.get('completed_jobs',[]),
                                          placement_adjustments=r.get('placement_adjustments',[]),
                                          recoveries=r.get('recoveries',[]),route_backoffs=r.get('route_backoffs',0),
+                                         traffic_deferrals=r.get('traffic_deferrals',0),
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()
