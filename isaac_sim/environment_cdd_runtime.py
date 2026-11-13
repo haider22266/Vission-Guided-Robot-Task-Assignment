@@ -13,6 +13,11 @@ import subprocess
 
 class SceneResearchRuntime:
     def __init__(self,stage,records,args):
+        self.disabled=args.perception_backend=='off'
+        if self.disabled:
+            self.records={r['id']:r for r in records}
+            self.continuous=args.tasks_per_robot==0
+            return
         import omni.replicator.core as rep
         from pxr import Gf, UsdGeom
         self.records={r['id']:r for r in records}
@@ -82,6 +87,7 @@ class SceneResearchRuntime:
         return result
 
     def update(self,simulation_time):
+        if self.disabled:return
         if self.future is not None:
             if self.future.done():
                 for result in self.future.result():
@@ -109,10 +115,16 @@ class SceneResearchRuntime:
         if self.dashboard:self.dashboard.update_status(self.future is not None)
 
     def priority(self,rid):
+        if self.disabled:return .5
         result=self.results.get(rid,{})
         return .5+.5*max(result.get('hazard_risk',0.),result.get('rescue_signal',0.))
 
     def summary(self):
+        if self.disabled:
+            return {'perception_backend':'off','allocator':'shared cleanup queue; not QMIX',
+                    'same_stage':True,'camera_frames':{},'latest_area_clues':{},
+                    'visualization':{'enabled':False,'reason':'robot cameras disabled'},
+                    'vision_log':None,'limitations':'No image perception or visual risk priority while cameras are disabled.'}
         return {'perception_backend':self.backend,'allocator':('priority-ordered shared cleanup queue; not QMIX' if self.continuous
                     else 'role-constrained priority baseline; not QMIX'),
                 'same_stage':True,'camera_frames':self.frames,'latest_area_clues':self.results,
@@ -124,6 +136,7 @@ class SceneResearchRuntime:
                     if self.continuous else 'Original robot/object/rack roles retained. No cross-role reassignment or ROS interface in this entry point.')}
 
     def close(self):
+        if self.disabled:return
         if self.process is not None:
             self.process.terminate()
             try:self.process.wait(timeout=3)

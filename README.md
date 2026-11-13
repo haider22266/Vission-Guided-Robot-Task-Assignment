@@ -31,16 +31,20 @@ See [the result snapshot](reports/RESULTS_SUMMARY.md) and
 
 ## Run the warehouse integration
 
-Requires Isaac Sim 5.1, Windows with WSL2 Ubuntu-22.04, and TensorFlow in a
-separate environment. The warehouse scene and helper scripts are included in
+Requires Isaac Sim 5.1. Optional learned camera perception also requires
+TensorFlow in a separate environment (WSL2 Ubuntu-22.04 on this machine).
+The warehouse scene and helper scripts are included in
 `isaac_sim/warehouse_source`; its NVIDIA assets remain external references.
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\run_environment_cdd.ps1 -IsaacRoot 'C:\isaac-sim'
 ```
 
-The default expects `models/cdd/efficientnet_cdd.keras` plus its metadata and
-`.venv-cdd-wsl`. The trained checkpoint, Python environments, raw CDD images,
+The default disables robot cameras and inference, and selects the first
+feasible checked cleanup task to reduce search work. To restore learned camera
+perception, pass `-PerceptionBackend efficientnet`; that mode expects
+`models/cdd/efficientnet_cdd.keras` plus its metadata and `.venv-cdd-wsl`.
+The trained checkpoint, Python environments, raw CDD images,
 NuRec data and generated scene files are excluded from Git. Train the model
 using [TRAIN_CDD.md](TRAIN_CDD.md), or restore it from the separately shared
 research ZIP. [ENVIRONMENT_CDD_PROJECT.md](ENVIRONMENT_CDD_PROJECT.md) explains

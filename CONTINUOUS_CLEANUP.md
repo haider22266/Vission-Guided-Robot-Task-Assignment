@@ -8,7 +8,13 @@ The default is now `-TasksPerRobot 0`: remove the old two-object limit and use
 a shared queue of all registered movable disaster props. The inspected scene
 contains 88 logical objects: compound cartons/tape and multi-part tools count
 as one object each. Warehouse stock and rack structure are not cleanup targets.
-The same stage, five robots, trained camera classifier and fixed viewport remain.
+The same stage, five robots and fixed viewport remain.
+Robot cameras and the classifier are now optional and disabled by default;
+enable them with `-PerceptionBackend efficientnet`. The fixed warehouse view
+remains visible. The launcher enables `-Fast` to stop candidate search at the
+first feasible checked task; `-Fast:$false` restores exhaustive ranking.
+No full-cleanup speedup has yet been measured for this option. Oversized beams
+remain blocked on the existing racks.
 
 Each robot first tries its original object family, then other available floor
 objects. Reservations cover both object identity and the object's projected

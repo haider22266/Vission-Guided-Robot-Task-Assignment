@@ -1,6 +1,7 @@
 param(
     [string]$IsaacRoot='F:\RSPE Project\isaac-sim-standalone-5.1.0-windows-x86_64',
-    [ValidateSet('mock','efficientnet')][string]$PerceptionBackend='efficientnet',
+    [ValidateSet('off','mock','efficientnet')][string]$PerceptionBackend='off',
+    [switch]$Fast=$true,
     [string]$Model='', [string]$ClassifierPython='',
     [ValidateSet('auto','windows','wsl')][string]$ClassifierBackend='auto',
     [string]$ClassifierDistro='Ubuntu-22.04',
@@ -18,9 +19,10 @@ if ($existing) {
     throw "The warehouse simulation is already running (PID $existingIds). Close its Isaac Sim window, then run this command again to load updated code. Starting a duplicate can exhaust GPU memory."
 }
 if ($Headless) { Write-Host 'Headless mode: no simulation window or camera dashboard will be displayed.' }
-else { Write-Host 'Opening Isaac Sim with the fixed warehouse view, task panel, and Live robot cameras and CDD predictions panel.' }
+else { Write-Host "Opening Isaac Sim with the fixed warehouse view and task panel. Perception: $PerceptionBackend" }
 if ($Headless -and $Duration -eq 0) { $Duration=3600 }
 $runArgs=@('isaac_sim/environment_cdd_project.py','--perception-backend',$PerceptionBackend,'--duration',"$Duration",'--tasks-per-robot',"$TasksPerRobot")
+if ($Fast) { $runArgs+='--fast-cleanup' }
 if ($PerceptionBackend -eq 'efficientnet') {
     if (-not $Model) { $Model=Join-Path $PSScriptRoot 'models\cdd\efficientnet_cdd.keras' }
     if (-not (Test-Path -LiteralPath $Model -PathType Leaf)) { throw 'Pass -Model with the trained CDD Keras checkpoint.' }

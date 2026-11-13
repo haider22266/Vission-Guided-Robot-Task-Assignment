@@ -18,6 +18,7 @@ class FakeRGB:
 
 def test_live_camera_updates_while_classifier_is_busy_without_queuing_frames():
     runtime=SceneResearchRuntime.__new__(SceneResearchRuntime)
+    runtime.disabled=False
     pending=Future()
     runtime.future=pending
     runtime.last=-10.
@@ -36,6 +37,7 @@ def test_live_camera_updates_while_classifier_is_busy_without_queuing_frames():
 
 def test_prediction_collection_keeps_its_original_timestamp():
     runtime=SceneResearchRuntime.__new__(SceneResearchRuntime)
+    runtime.disabled=False
     result={'robot_id':1,'source':'efficientnet','predicted_class':'Fire Disaster','confidence':.8,'simulation_time':1.}
     runtime.future=Future()
     runtime.future.set_result([result])
@@ -63,3 +65,15 @@ def test_dashboard_labels_camera_prediction_times_and_mock_source_separately():
     assert 'result @ 1.0s' in dashboard.labels[1].text
     assert 'MOCK TEST' in dashboard.labels[1].text
     assert 'Arrange carton' in dashboard.tasks[1].text
+
+
+def test_disabled_cameras_need_no_isaac_imports_workers_or_checkpoint(tmp_path):
+    runtime=SceneResearchRuntime(None,[{'id':1}],SimpleNamespace(perception_backend='off',tasks_per_robot=0))
+    runtime.update(1.)
+    assert runtime.priority(1)==.5
+    summary=runtime.summary()
+    assert summary['camera_frames']=={}
+    assert summary['vision_log'] is None
+    assert not summary['visualization']['enabled']
+    assert not hasattr(runtime,'process') and not hasattr(runtime,'sensors')
+    runtime.close()

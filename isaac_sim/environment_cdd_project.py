@@ -22,7 +22,8 @@ from warehouse_navigation import FloorPlanner
 def arguments():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--scene', type=Path, default=SOURCE_DIR/'warehouse_verified.usd')
-    p.add_argument('--perception-backend',choices=('mock','efficientnet'),default='efficientnet')
+    p.add_argument('--perception-backend',choices=('off','mock','efficientnet'),default='off')
+    p.add_argument('--fast-cleanup',action='store_true',help='Claim the first feasible checked task instead of exhaustively ranking grasp candidates')
     p.add_argument('--efficientnet-model',type=Path,default=Path(__file__).resolve().parents[1]/'models/cdd/efficientnet_cdd.keras')
     p.add_argument('--classifier-python',default=sys.executable,help='Python environment containing TensorFlow')
     p.add_argument('--classifier-wsl',action='store_true')
@@ -282,7 +283,8 @@ def main():
                 app.update()
             if clock[0]/60 >= args.duration:
                 raise TimeoutError('Maximum simulated duration exceeded')
-            render = clock[0] % (8 if args.headless else 3) == 0
+            render_interval=(16 if args.headless else 6) if args.perception_backend=='off' else (8 if args.headless else 3)
+            render = clock[0] % render_interval == 0
             world.step(render=render)
             if research is not None and render:
                 research.update(clock[0]/60)
@@ -728,6 +730,8 @@ def main():
                     best_cost=min(best_cost,cost)
                     options.append((cost,group,np.array(dock),np.array(point),carry,yaw,
                                     dict(r['candidate_rack_slot']) if cleanup is not None else None))
+                    if args.fast_cleanup:
+                        return options[-1]
             if cleanup is not None:
                 options=[option for option in options if cleanup.items[str(option[1][0].GetPath())]['state']=='pending'
                          and cleanup.slot_free(option[6]['box'])]

@@ -23,7 +23,13 @@ All five workers run concurrently by default. Navigation reservations only
 delay conflicting routes; local obstacle and peer/load avoidance remain active.
 The optional `-Serial` flag is for one-at-a-time debugging.
 
-The GUI shows the fixed warehouse viewport, the task window, and a docked
+The default GUI shows the fixed warehouse viewport and task window. Robot
+cameras and inference are disabled (`-PerceptionBackend off`). The launcher
+enables faster first-feasible task selection (`-Fast`, disable with
+`-Fast:$false`). Navigation and grasp/support verification remain active;
+this reduces search/render work without claiming faster measured completion.
+
+With `-PerceptionBackend efficientnet` or `mock`, the GUI also shows a docked
 **Live robot cameras and CDD predictions** panel with five RGB feeds, last
 predicted class/confidence, risk scores, scheduling priority and current task.
 Camera and prediction timestamps are shown separately, because inference can
@@ -38,7 +44,7 @@ was blocked by GPU memory exhaustion while another warehouse instance was
 running; that test instance was stopped. Python logic tests cover live-frame
 refresh during pending inference and timestamp/mock labeling.
 
-The default is **trained EfficientNet perception**, using
+Optional **trained EfficientNet perception** (`-PerceptionBackend efficientnet`) uses
 `models/cdd/efficientnet_cdd.keras` and the isolated `.venv-cdd-wsl` TensorFlow
 environment. The model was trained from the supplied CDD images; the dataset
 folder itself is not a checkpoint. Five
@@ -48,7 +54,7 @@ allows only one outstanding batch so frames cannot accumulate indefinitely.
 Vision records are written beside `isaac_sim/scenes/environment_cdd_report.json`
 in `environment_cdd_report.vision.jsonl`.
 
-The default command starts the classifier in a separate WSL process. Windows
+EfficientNet mode starts the classifier in a separate WSL process. Windows
 Application Control blocked native TensorFlow DLL loading on this machine.
 For a different checkpoint and a working native Windows TensorFlow environment:
 
