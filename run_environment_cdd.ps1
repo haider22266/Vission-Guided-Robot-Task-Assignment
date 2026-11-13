@@ -10,6 +10,15 @@ $ErrorActionPreference='Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $runner=Join-Path $IsaacRoot 'python.bat'
 if (-not (Test-Path -LiteralPath $runner)) { throw "Isaac launcher missing: $runner" }
+$existing=Get-CimInstance Win32_Process -Filter "Name='kit.exe'" | Where-Object {
+    $_.CommandLine -match 'environment_cdd_project\.py'
+}
+if ($existing) {
+    $existingIds=($existing.ProcessId -join ', ')
+    throw "The warehouse simulation is already running (PID $existingIds). Close its Isaac Sim window, then run this command again to load updated code. Starting a duplicate can exhaust GPU memory."
+}
+if ($Headless) { Write-Host 'Headless mode: no simulation window or camera dashboard will be displayed.' }
+else { Write-Host 'Opening Isaac Sim with the fixed warehouse view, task panel, and Live robot cameras and CDD predictions panel.' }
 if ($Headless -and $Duration -eq 0) { $Duration=3600 }
 $runArgs=@('isaac_sim/environment_cdd_project.py','--perception-backend',$PerceptionBackend,'--duration',"$Duration",'--tasks-per-robot',"$TasksPerRobot")
 if ($PerceptionBackend -eq 'efficientnet') {

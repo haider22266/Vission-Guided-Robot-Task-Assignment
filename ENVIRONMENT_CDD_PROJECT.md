@@ -23,6 +23,21 @@ All five workers run concurrently by default. Navigation reservations only
 delay conflicting routes; local obstacle and peer/load avoidance remain active.
 The optional `-Serial` flag is for one-at-a-time debugging.
 
+The GUI shows the fixed warehouse viewport, the task window, and a docked
+**Live robot cameras and CDD predictions** panel with five RGB feeds, last
+predicted class/confidence, risk scores, scheduling priority and current task.
+Camera and prediction timestamps are shown separately, because inference can
+lag behind live frames. Live images continue refreshing while inference is
+busy. `-Headless` intentionally hides all visualization.
+
+Close an existing simulation before restarting after code changes. The
+launcher checks for an already running warehouse instance: two full instances
+can exceed GPU memory. The original window can be restored from the Windows
+taskbar (title: Isaac Sim Python 5.1.0). A full GUI validation of the new panels
+was blocked by GPU memory exhaustion while another warehouse instance was
+running; that test instance was stopped. Python logic tests cover live-frame
+refresh during pending inference and timestamp/mock labeling.
+
 The default is **trained EfficientNet perception**, using
 `models/cdd/efficientnet_cdd.keras` and the isolated `.venv-cdd-wsl` TensorFlow
 environment. The model was trained from the supplied CDD images; the dataset

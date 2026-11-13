@@ -86,6 +86,11 @@ def main():
         print('Removed front wall assemblies for this session:',len(removed_walls))
         task_root = '/World/RobotTasks'
         UsdGeom.Xform.Define(stage, task_root)
+        from omni.kit.viewport.utility import get_active_viewport,get_active_viewport_window
+        viewport=get_active_viewport()
+        if viewport is not None:viewport.camera_path='/OmniverseKit_Persp'
+        viewport_window=get_active_viewport_window()
+        if viewport_window is not None and not args.headless:viewport_window.visible=True
         set_camera_view(eye=[0, -23, 7.5], target=[0, -1, .5])
         camera = UsdGeom.Camera(stage.GetPrimAtPath('/OmniverseKit_Persp'))
         camera.GetFocalLengthAttr().Set(28.)
@@ -191,6 +196,8 @@ def main():
                                                 else 'Existing props | contact-verified assisted grasp',height=25)
                     for r in records:
                         ui_labels[r['id']]=ui.Label('Robot %02d | %s | waiting'%(r['id'],r['task']),height=52,word_wrap=True)
+            viewport_ui=ui.Workspace.get_window('Viewport')
+            if viewport_ui is not None:task_window.dock_in(viewport_ui,ui.DockPosition.BOTTOM,.28)
         for r in records:
             r['finger_prims']=[stage.GetPrimAtPath(str(r['model'].GetPath())+'/panda_'+side+'finger') for side in ('left','right')]
             r['contacts']=RigidPrim([str(p.GetPath()) for p in r['finger_prims']],name='source_contacts_%d'%r['id'],

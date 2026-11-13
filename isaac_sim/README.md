@@ -1,4 +1,15 @@
-For the new five-robot pick-and-place workflow with a fixed camera and an
+For the current CDD classifier, five robot camera feeds, task visualization and
+continuous warehouse cleanup, run from the workspace root:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\run_environment_cdd.ps1
+```
+
+Close an existing warehouse instance first. Omit `-Headless` for the 3D window
+and the **Live robot cameras and CDD predictions** panel. See
+[ENVIRONMENT_CDD_PROJECT.md](../ENVIRONMENT_CDD_PROJECT.md) for details.
+
+For the earlier five-robot pick-and-place workflow with a fixed camera and an
 open-front environment, see [FIVE_ROBOT_PICK_PLACE.md](FIVE_ROBOT_PICK_PLACE.md).
 
 For the separate five-Ridgeback–Franka ROS 2 camera/allocator/controller system,

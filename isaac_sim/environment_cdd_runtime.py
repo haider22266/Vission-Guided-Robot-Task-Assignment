@@ -26,6 +26,7 @@ class SceneResearchRuntime:
         self.process=None
         self.future=None
         self.pool=ThreadPoolExecutor(max_workers=1)
+        self.dashboard=None
         self.log_path=args.report.with_suffix('.vision.jsonl')
         self.log_path.parent.mkdir(parents=True,exist_ok=True)
         self.log=self.log_path.open('w',encoding='utf-8')
@@ -41,6 +42,9 @@ class SceneResearchRuntime:
             annotator=rep.AnnotatorRegistry.get_annotator('rgb')
             annotator.attach([product])
             self.sensors[rid]=annotator
+        if not args.headless:
+            from camera_dashboard import CameraDashboard
+            self.dashboard=CameraDashboard(self.records,self.backend)
         if self.backend=='efficientnet':
             worker=Path(__file__).resolve().parents[1]/'scripts/cdd_inference_worker.py'
             def wsl_path(value):
@@ -79,15 +83,15 @@ class SceneResearchRuntime:
 
     def update(self,simulation_time):
         if self.future is not None:
-            if not self.future.done():
-                return
-            for result in self.future.result():
-                rid=result['robot_id']
-                self.results[rid]=result
-                self.log.write(json.dumps(result)+'\n')
-                print('CDD area clue:',rid,result['predicted_class'],round(result['confidence'],3),flush=True)
-            self.log.flush()
-            self.future=None
+            if self.future.done():
+                for result in self.future.result():
+                    rid=result['robot_id']
+                    self.results[rid]=result
+                    if self.dashboard:self.dashboard.result(result)
+                    self.log.write(json.dumps(result)+'\n')
+                    print('CDD area clue:',rid,result['predicted_class'],round(result['confidence'],3),flush=True)
+                self.log.flush()
+                self.future=None
         if simulation_time-self.last<1.:
             return
         self.last=simulation_time
@@ -98,9 +102,11 @@ class SceneResearchRuntime:
                 continue
             rgb=data[:,:,:3].copy()
             self.frames[rid]+=1
+            if self.dashboard:self.dashboard.frame(rid,rgb,simulation_time)
             batch.append((rid,rgb,simulation_time))
-        if batch:
+        if batch and self.future is None:
             self.future=self.pool.submit(lambda:[self.classify(*item) for item in batch])
+        if self.dashboard:self.dashboard.update_status(self.future is not None)
 
     def priority(self,rid):
         result=self.results.get(rid,{})
@@ -112,6 +118,7 @@ class SceneResearchRuntime:
                 'same_stage':True,'camera_frames':self.frames,'latest_area_clues':self.results,
                 'priorities':{rid:self.priority(rid) for rid in self.records},
                 'vision_log':str(self.log_path),
+                'visualization':self.dashboard.summary() if self.dashboard else {'enabled':False,'reason':'headless run'},
                 'association':'Mounted robot camera -> current robot work area; no object or person localization',
                 'limitations':('Shared cleanup assigns original floor props to available identical manipulators; not a learned role-switching policy. No ROS interface.'
                     if self.continuous else 'Original robot/object/rack roles retained. No cross-role reassignment or ROS interface in this entry point.')}
@@ -122,6 +129,7 @@ class SceneResearchRuntime:
             try:self.process.wait(timeout=3)
             except subprocess.TimeoutExpired:self.process.kill();self.process.wait()
         self.pool.shutdown(wait=True,cancel_futures=True)
+        if self.dashboard:self.dashboard.close()
         self.log.close()
         for rid,annotator in self.sensors.items():
             annotator.detach([self.products[list(self.sensors).index(rid)].path])
