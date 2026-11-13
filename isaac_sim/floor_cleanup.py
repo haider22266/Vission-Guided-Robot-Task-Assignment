@@ -7,6 +7,11 @@ class TrafficDeferred(RuntimeError):
     """A transient route conflict; not evidence of failed manipulation."""
 
 
+def idle_clear_due(position,home,carrying,last_attempt,now):
+    """Idle empty robots should leave work aisles, with bounded retry cadence."""
+    return not carrying and math.dist(position[:2],home[:2])>.35 and now-last_attempt>=30.
+
+
 def floor_groups(prims):
     """Group original compound props; never treat tape/tool parts as new jobs."""
     by_name={p.GetName():p for p in prims}

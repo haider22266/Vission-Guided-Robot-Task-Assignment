@@ -3,7 +3,18 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres
+from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,idle_clear_due
+
+
+def test_idle_aisle_clearing_preserves_loads_and_bounds_retries():
+    assert idle_clear_due((2,0),(0,-6),False,-100,0)
+    assert not idle_clear_due((2,0),(0,-6),True,-100,0)
+    assert not idle_clear_due((0,-6),(0,-6),False,-100,0)
+    assert not idle_clear_due((2,0),(0,-6),False,10,20)
+    assert idle_clear_due((2,0),(0,-6),False,10,40)
+    routes=RouteReservations()
+    assert not routes.reserve(4,[(0,0),(3,0)],.6,{1:((2,0),.6)})
+    assert routes.reserve(4,[(0,0),(3,0)],.6,{1:((0,-6),.6)})
 
 
 def test_alternative_placement_centres_cover_support_without_overhang():

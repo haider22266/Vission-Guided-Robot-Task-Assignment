@@ -79,7 +79,15 @@ Reports count `traffic_deferrals`; transient contention is logged as
 81-test suite verifies short-route reservations and lease release, but this
 change has not yet been validated in a live multi-robot Isaac run.
 Stationary peers, shelves, floor clutter and stored objects remain planning
-obstacles. The live per-frame peer/load overlap check and local avoidance remain
+obstacles. Empty idle robots now try to return to their original front-apron
+positions rather than staying inside the work aisles in `cleanup_waiting`.
+Their parking movement uses the normal route and collision checks, retries at
+most once per 30 simulated seconds, and causes pending grasp/route choices to
+be reconsidered after actual movement. A carried object is never abandoned by
+this idle-parking rule. The scheduler allows eligible parking before declaring
+the pool infeasible. Reports include `idle_relocations`. All 82 logic tests
+pass; recovery from the pictured multi-robot stall is not yet live-validated.
+The live per-frame peer/load overlap check and local avoidance remain
 active. The viewport camera stays fixed.
 
 This is a conservative spatial route coordinator, not Nav2 or a proven

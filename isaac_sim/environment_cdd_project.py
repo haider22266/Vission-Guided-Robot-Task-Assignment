@@ -151,7 +151,7 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
-        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred,idle_clear_due
         route_reservations=RouteReservations()
         concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
@@ -1070,6 +1070,10 @@ def main():
             keys=cleanup.available(r['id'])
             return [key for key in keys if key.rsplit('/',1)[-1]==args.only_object] if args.only_object else keys
 
+        def needs_idle_clear(r):
+            return idle_clear_due(pose(r['base'])[0],r['home'],r.get('carrying',False),
+                                  r.get('idle_clear_attempt',-math.inf),clock[0]/60)
+
         def run_one_task(r):
             try:
                 event(r,'reserve_existing_environment_object')
@@ -1376,6 +1380,24 @@ def main():
                         event(r,'all_assigned_environment_tasks_complete')
                         return
                     if not available_cleanup(r):
+                        if needs_idle_clear(r):
+                            r['cleanup_waiting']=False
+                            r['idle_clear_attempt']=clock[0]/60
+                            before=pose(r['base'])[0][:2].copy()
+                            event(r,'clear_idle_robot_from_work_aisle')
+                            try:
+                                yield from navigate(r,r['home'][:2],yaw=0.)
+                            except RuntimeError:
+                                event(r,'idle_parking_route_blocked')
+                            finally:
+                                route_reservations.release(r['id'],clock[0]/60)
+                                r['nav_active']=False
+                            if float(np.linalg.norm(pose(r['base'])[0][:2]-before))>.1:
+                                cleanup.epoch+=1
+                                r['idle_relocations']=r.get('idle_relocations',0)+1
+                            # Reconsider grasps after parking changes access.
+                            yield
+                            continue
                         r['cleanup_waiting']=True
                         if r['state']!='cleanup_waiting':event(r,'cleanup_waiting')
                         yield
@@ -1471,7 +1493,7 @@ def main():
                 # Exhausting a robot's preferred family does not mean the
                 # shared pool is exhausted. Let its next turn try other kinds.
                 if not any(item['state']=='assigned' for item in cleanup.items.values()) and not any(
-                        available_cleanup(r) for r in selected if r['id'] in workers):
+                        available_cleanup(r) or needs_idle_clear(r) for r in selected if r['id'] in workers):
                     cleanup_stop_reason='No currently feasible pickup and free rack slot; remaining objects are not clean'
                     break
             if workers:
@@ -1551,6 +1573,7 @@ def main():
                                          placement_adjustments=r.get('placement_adjustments',[]),
                                          recoveries=r.get('recoveries',[]),route_backoffs=r.get('route_backoffs',0),
                                          traffic_deferrals=r.get('traffic_deferrals',0),
+                                         idle_relocations=r.get('idle_relocations',0),
                                          no_more_reachable_props=r.get('no_more_reachable_props',False),
                                          transitions=r['transitions'],routes=r['route']))
         report['research_pipeline']=research.summary()
