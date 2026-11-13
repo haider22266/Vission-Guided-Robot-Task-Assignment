@@ -729,6 +729,12 @@ def main():
                         route = nav.plan(current[:2],dock)
                     except ValueError:
                         continue
+                    # Other cooperative workers may claim the object/slot
+                    # during the IK search's yields. Recheck before the fast
+                    # return; the caller claims immediately without yielding.
+                    if cleanup is not None and (cleanup.items[str(group[0].GetPath())]['state']!='pending'
+                            or not cleanup.slot_free(r['candidate_rack_slot']['box'])):
+                        continue
                     cost = sum(math.dist(a,b) for a,b in zip(route,route[1:]))
                     best_cost=min(best_cost,cost)
                     options.append((cost,group,np.array(dock),np.array(point),carry,yaw,
