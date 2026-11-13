@@ -1,0 +1,55 @@
+{
+  "test": "injected drop with bounded task search",
+  "perception_backend": "off",
+  "target": "Debris_009",
+  "simulated_seconds": 40.933,
+  "counts": {
+    "pending": 88,
+    "assigned": 0,
+    "stored": 0,
+    "blocked": 0,
+    "failed": 0
+  },
+  "floor_clean": false,
+  "robots": [
+    {
+      "robot": "Robot_01",
+      "failure": "No currently feasible pickup and free rack slot; remaining objects are not clean",
+      "recoveries": [
+        {
+          "time": 20.516666666666666,
+          "object": "/World/DisasterAftermath/Props/Debris_009",
+          "pose_handoff_error_m": 0.0,
+          "settled_speed_m_s": 0.00042144383769482374,
+          "floor_height_m": -1.964701974443983e-07
+        }
+      ],
+      "verified_placements": []
+    },
+    {
+      "robot": "Robot_02",
+      "failure": "No currently feasible pickup and free rack slot; remaining objects are not clean",
+      "recoveries": [],
+      "verified_placements": []
+    },
+    {
+      "robot": "Robot_03",
+      "failure": "No currently feasible pickup and free rack slot; remaining objects are not clean",
+      "recoveries": [],
+      "verified_placements": []
+    },
+    {
+      "robot": "Robot_04",
+      "failure": "No currently feasible pickup and free rack slot; remaining objects are not clean",
+      "recoveries": [],
+      "verified_placements": []
+    },
+    {
+      "robot": "Robot_05",
+      "failure": "No currently feasible pickup and free rack slot; remaining objects are not clean",
+      "recoveries": [],
+      "verified_placements": []
+    }
+  ],
+  "interpretation": "Negative completion result: physical floor recovery alone did not produce a successful subsequent placement. The later multi-direction escape refinement was not loaded in this recorded run. Do not use this diagnostic as proof of full cleanup or successful dropped-object completion."
+}

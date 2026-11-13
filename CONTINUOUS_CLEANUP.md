@@ -21,6 +21,37 @@ requests the next task after backing out from a verified placement instead of
 returning home after every object. Idle robots still park to clear aisles.
 Grasp, load clearance, exclusive rack reservations and settling checks remain.
 
+Task search now handles at most six objects per pass and rejects only those
+actually inspected; unsearched objects remain available for the next worker
+turn. Pickup candidates try centre-first grasp points and 0.90, 0.75 and
+1.05 metre stand-off distances. Each retains docking, overhead, route, grasp,
+lift and rack-feasibility checks. The pickup route is checked before the
+expensive rack IK search. Rejected objects record per-robot
+`planning_diagnostics` counters for docking clearance, overhead obstacles,
+disconnected routes, grasp IK, rack fitting and changed leases in the cleanup
+JSON. `TASK REJECTED` log lines contain these counters. A zero assignment count
+must not be interpreted as completion; genuinely infeasible work remains
+unfinished with these reasons, rather than being forced onto the racks.
+Cooperative searches also cancel a candidate when another robot claims it,
+including during rack IK yields, to avoid finishing expensive stale searches.
+
+An empty base inside inflated planning margins can attempt a reserved exit
+using its rotated physical half-extents plus 2 cm. Every segment must clear
+the obstacle geometry and peer checks; bases already inside that physical
+clearance are refused. Exit motion is limited to 0.25 m/s. A stalled exit is
+abandoned for another checked direction (at most 12 reserved attempts).
+Successful clearance invalidates previous route rejections. Contact transition
+now holds measured arm/finger joint positions while changing the object's
+collision representation; source-pose and visible-contact checks still apply.
+
+The focused injected-drop test identified the margin trap and demonstrated
+why assignment alone is insufficient. Its recorded final run did not store
+the target and stopped with no feasible pickup: it is a negative result, not a
+successful completion test. The subsequent multi-direction escape change has
+not yet completed a live drop regression. See
+`reports/search_reassignment_validation.json`. The updated 84-test logic suite
+passes; full-scene completion remains unverified.
+
 Each robot first tries its original object family, then other available floor
 objects. Reservations cover both object identity and the object's projected
 world-space rack footprint. A robot must find a feasible approach/grasp, a free

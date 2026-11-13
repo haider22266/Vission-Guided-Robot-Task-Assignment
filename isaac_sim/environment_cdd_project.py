@@ -515,6 +515,8 @@ def main():
                 yield from navigate_unreserved(r,goal,yaw)
                 return
             try:
+                if not planner(r).free(pose(r['base'])[0][:2]) and not r.get('carrying'):
+                    yield from escape_static_margin(r)
                 yield from clear_initial_traffic_margin(r)
                 for leg in range(1000):
                     route=None
@@ -543,6 +545,55 @@ def main():
                 route_reservations.release(r['id'],clock[0]/60)
                 r['nav_active']=False
                 r.pop('reserved_route',None)
+
+        def escape_static_margin(r):
+            """Leave inflated planning margins only through physically clear space."""
+            start=pose(r['base'])[0][:2].copy()
+            nav=planner(r)
+            if nav.free(start):return
+            # Actual rotated base half-extents plus 2 cm, rather than the
+            # conservative 64 cm planning inflation. Object geometry remains.
+            c,s=abs(math.cos(r['yaw'])),abs(math.sin(r['yaw']))
+            hx,hy=.48*c+.42*s+.02,.48*s+.42*c+.02
+            physical=FloorPlanner([(lo[0]-hx,hi[0]+hx,lo[1]-hy,hi[1]+hy) for lo,hi in obstacles(r)],radius=0.)
+            if not physical.free(start):
+                raise TrafficDeferred('Base is inside physical obstacle clearance; automatic escape refused')
+            positions={other['id']:(pose(other['base'])[0][:2],.70) for other in records}
+            escape_attempts=0
+            for distance in np.arange(.10,1.61,.10):
+                for angle in np.linspace(0,2*math.pi,24,endpoint=False):
+                    start=pose(r['base'])[0][:2].copy()
+                    goal=start+distance*np.array([math.cos(angle),math.sin(angle)])
+                    if not nav.free(goal) or not physical.clear(start,goal):continue
+                    if not route_reservations.reserve(r['id'],[start,goal],navigation_radius(r),positions,
+                            clock[0]/60,footprint=navigation_footprint(r)):continue
+                    escape_attempts+=1
+                    event(r,'exit_inflated_margin_with_physical_clearance')
+                    r['nav_active']=True
+                    stalled=0
+                    try:
+                        for _ in range(900):
+                            current=pose(r['base'])[0][:2].copy()
+                            delta=goal-current
+                            length=float(np.linalg.norm(delta))
+                            if length<.02:
+                                cleanup.epoch+=1
+                                return
+                            command=current+delta/max(length,1e-8)*min(length,.25/60)
+                            if not physical.clear(current,command) or not traffic_clear(r,command):
+                                break
+                            drive(r,command,r['yaw'])
+                            yield
+                            moved=float(np.linalg.norm(pose(r['base'])[0][:2]-current))
+                            r['distance']+=moved
+                            stalled=stalled+1 if moved<.00005 else 0
+                            if stalled>=30:break
+                    finally:
+                        route_reservations.release(r['id'],clock[0]/60)
+                        r['nav_active']=False
+                    if escape_attempts>=12:
+                        raise TrafficDeferred('Checked margin exits remain physically blocked')
+            raise TrafficDeferred('No physically clear exit from the inflated planning margin')
 
         def navigate_unreserved(r, goal, yaw=None):
             if not concurrent_cleanup:yield from clear_initial_traffic_margin(r)
@@ -667,12 +718,23 @@ def main():
             r['selection_nav']=nav
             options = []
             best_cost=math.inf
+            r['search_diagnostics']={}
+            r['searched_keys']=[]
             groups=sorted(groups,key=lambda g:(
                 0 if cleanup is not None and cleanup.items[str(g[0].GetPath())].get('recoveries',0) else 1,
                 np.linalg.norm(((sum(bounds(g)))/2)[:2]-current[:2])))
             for group_index,group in enumerate(groups):
+                if cleanup is not None and group_index>=6:break
                 if group_index and group_index%2==0:yield
                 if cleanup is not None and cleanup.items[str(group[0].GetPath())]['state']!='pending':continue
+                key=str(group[0].GetPath())
+                r['candidate_object_id']=key
+                r['searched_keys'].append(key)
+                checks=dict(docking_blocked=0,overhead_blocked=0,route_blocked=0,grasp_ik_failed=0,rack_fit_failed=0,lease_changed=0)
+                r['search_diagnostics'][key]=checks
+                def rejected(stage):
+                    checks[stage]+=1
+                    r.setdefault('placement_rejections',{})[key]='Search rejection counts: '+json.dumps(checks,sort_keys=True)
                 if cleanup is not None:r['candidate_kind']=cleanup_by_id[str(group[0].GetPath())]['kind']
                 lo,hi = bounds(group)
                 if cleanup is not None and r['candidate_kind']=='beam':
@@ -687,25 +749,28 @@ def main():
                 half=float(UsdGeom.Cube(primary).GetSizeAttr().Get())/2
                 face,sign,axes=upper_face([tuple(transform.TransformDir(Gf.Vec3d(*(1. if i==j else 0. for j in range(3))))) for i in range(3)])
                 approaches=[]
-                for u in (-.45,-.30,0.,.30,.45):
-                    for v in (-.45,-.30,0.,.30,.45):
+                for u in (0.,-.30,.30,-.45,.45):
+                    for v in (0.,-.30,.30,-.45,.45):
                         local=[0.,0.,0.]
                         local[face]=sign*half
                         local[axes[0]],local[axes[1]]=u*2*half,v*2*half
                         top=np.array(transform.Transform(Gf.Vec3d(*local)))
                         for yaw in (0.,math.pi,math.pi/2,-math.pi/2):
                             direction=np.array([math.cos(yaw),math.sin(yaw)])
-                            dock=top[:2]-.90*direction
                             point=top+np.array([0,0,.013])
-                            approaches.append((dock,point,yaw))
+                            for stand_off in (.90,.75,1.05):
+                                dock=top[:2]-stand_off*direction
+                                approaches.append((dock,point,yaw))
                 for approach_index,(dock,point,yaw) in enumerate(approaches):
                     if approach_index and approach_index%12==0:yield
+                    if cleanup is not None and cleanup.items[key]['state']!='pending':break
                     # A path cannot beat its straight-line lower bound. Avoid
                     # freezing the UI by running A* for thousands of farther
                     # grasp candidates after a nearer reachable task is found.
                     if np.linalg.norm(np.array(dock)-current[:2])>best_cost+1e-8:
                         continue
                     if not nav.free(dock):
+                        rejected('docking_blocked')
                         continue
                     if cleanup is not None:
                         import omni.physx
@@ -717,25 +782,32 @@ def main():
                                     for k in ('rigidBody','collision') for p in group):
                                 overhead=True
                                 break
-                        if overhead:continue
+                        if overhead:
+                            rejected('overhead_blocked')
+                            continue
+                    # Reject disconnected approaches before the much more
+                    # expensive search through rack IK candidates.
+                    try:route=nav.plan(current[:2],dock)
+                    except ValueError:
+                        rejected('route_blocked')
+                        continue
                     direction=np.array([math.cos(yaw),math.sin(yaw)])
                     carry=np.array([*(np.array(dock)+.52*direction),max(.85,point[2]+.15)])
                     shoulder_xy=np.array(dock)+.30*np.array([math.cos(yaw),math.sin(yaw)])
                     r['solver'].set_robot_base_pose(np.array([*shoulder_xy,r['shoulder_z']]),np.array([math.cos(yaw/2),0,0,math.sin(yaw/2)]))
                     if not all(r['solver'].compute_inverse_kinematics('right_gripper',np.array(p),down(yaw))[1]
                                for p in (point,np.array(point)+[0,0,.06],carry)):
+                        rejected('grasp_ik_failed')
                         continue
                     if not (yield from rack_ik_available(r,np.array(point),yaw,lo,hi)):
-                        continue
-                    try:
-                        route = nav.plan(current[:2],dock)
-                    except ValueError:
+                        rejected('rack_fit_failed')
                         continue
                     # Other cooperative workers may claim the object/slot
                     # during the IK search's yields. Recheck before the fast
                     # return; the caller claims immediately without yielding.
                     if cleanup is not None and (cleanup.items[str(group[0].GetPath())]['state']!='pending'
                             or not cleanup.slot_free(r['candidate_rack_slot']['box'])):
+                        rejected('lease_changed')
                         continue
                     cost = sum(math.dist(a,b) for a,b in zip(route,route[1:]))
                     best_cost=min(best_cost,cost)
@@ -863,6 +935,7 @@ def main():
         def rack_ik_available(r,grip,source_yaw,source_lo,source_hi):
             """A task is available only if its original prop can also be placed."""
             if cleanup is not None:
+                if cleanup.items[r['candidate_object_id']]['state']!='pending':return False
                 half=(source_hi-source_lo)/2
                 rack_checks=0
                 preferred={rack_specs[r['id']][0],next_rack_specs[r['id']][0]}
@@ -896,7 +969,9 @@ def main():
                                 xs+=sorted(set([float(xlow),float(xhigh)]+[float(v) for v in np.arange(xlow,xhigh+.001,.12)]),key=lambda x:abs(x-cx))
                         for cx,y in ((x,y) for x in xs for y in ys):
                             rack_checks+=1
-                            if rack_checks%16==0:yield
+                            if rack_checks%16==0:
+                                yield
+                                if cleanup.items[r['candidate_object_id']]['state']!='pending':return False
                             box=(float(cx-projected[0]),float(y-projected[1]),float(cx+projected[0]),float(y+projected[1]))
                             if not cleanup.slot_free(box):continue
                             dock=np.array([edge-toward[0]*.70,y])
@@ -1099,9 +1174,11 @@ def main():
                     _,group,dock,grip,carry,yaw,rack_slot=yield from choose(r,groups)
                 except RuntimeError as exc:
                     if cleanup is not None and str(exc).startswith('No reachable floor object'):
-                        for key in available:
+                        for key in r.get('searched_keys',[]):
                             cleanup.reject(r['id'],[key],r.get('placement_rejections',{}).get(key,
                                 'No currently feasible route, grasp and unoccupied rack slot'))
+                            cleanup.items[key].setdefault('planning_diagnostics',{})[str(r['id'])]=r.get('search_diagnostics',{}).get(key,{})
+                            print('TASK REJECTED',r['id'],key,cleanup.items[key]['reason'],flush=True)
                         r['cleanup_waiting']=True
                         event(r,'cleanup_waiting')
                         return
@@ -1141,6 +1218,12 @@ def main():
                 yield from surface_contact(r,group,grip)
                 source_hand=pose(r['hand'])[0].copy()
                 original_center=sum(bounds(group))/2
+                # Stop commanding penetration into the static source while
+                # its collision representation changes for one physics frame.
+                # Hold measured joints; visible contact is rechecked below.
+                measured=r['robot'].get_joint_positions()
+                r['robot'].apply_action(ArticulationAction(joint_positions=measured[r['arm']].copy(),joint_indices=r['arm']))
+                r['robot'].apply_action(ArticulationAction(joint_positions=measured[r['fingers']].copy(),joint_indices=r['fingers']))
                 if cleanup is not None:r['cleanup_manipulated']=True
                 item=yield from mobilize(r,group)
                 # Compound conversion must preserve the exact visible source pose.

@@ -17,6 +17,18 @@ def test_idle_aisle_clearing_preserves_loads_and_bounds_retries():
     assert routes.reserve(4,[(0,0),(3,0)],.6,{1:((0,-6),.6)})
 
 
+def test_margin_escape_distinguishes_planning_inflation_from_physical_collision():
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'warehouse_source'))
+    from warehouse_navigation import FloorPlanner
+    inflated=FloorPlanner([(0,1,0,1)],radius=.64)
+    physical=FloorPlanner([(0,1,0,1)],radius=.50)
+    start=(1.58,.5)
+    assert not inflated.free(start) and physical.free(start)
+    assert inflated.free((1.8,.5)) and physical.clear(start,(1.8,.5))
+    assert not physical.clear(start,(0.,.5))
+    assert not physical.free((1.4,.5))
+
+
 def test_alternative_placement_centres_cover_support_without_overhang():
     positions=supported_centres((0.,0.),(1.,2.),(.2,.3),(.3,.4))
     assert positions[0]==(.3,.4)
