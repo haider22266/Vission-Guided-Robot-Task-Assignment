@@ -1078,7 +1078,7 @@ def main():
             try:
                 event(r,'reserve_existing_environment_object')
                 available=available_cleanup(r) if cleanup is not None else []
-                if cleanup is not None:
+                if cleanup is not None and not args.fast_cleanup:
                     own={str(group[0].GetPath()) for group in candidate_groups[r['id']]}
                     preferred=[key for key in available if key in own]
                     available=preferred or available
@@ -1178,10 +1178,17 @@ def main():
                 front_options=[np.array([dock[0]+dx,y]) for y in (-5.7,-6.6,-8.7)
                                for dx in (0.,-.8,.8,-1.6,1.6,-2.4,2.4)
                                if front_nav.free([dock[0]+dx,y])]
-                if not front_options:raise RuntimeError('No clear front transit waypoint for this original prop')
+                direct_route=False
+                if args.fast_cleanup:
+                    try:
+                        front_nav.plan(pose(r['base'])[0][:2],depot)
+                        direct_route=True
+                    except ValueError:pass
+                if not front_options and not direct_route:raise RuntimeError('No clear front transit waypoint for this original prop')
                 current=pose(r['base'])[0]
-                front=min(front_options,key=lambda p:np.linalg.norm(p-current[:2]))
-                yield from navigate(r,front)
+                if not direct_route:
+                    front=min(front_options,key=lambda p:np.linalg.norm(p-current[:2]))
+                    yield from navigate(r,front)
                 if cleanup is None and rear_zone_owner[0]==r['id']:
                     rear_zone_owner[0]=None
                 if '/Shelf_0/' in pallet_path and not concurrent_cleanup:
@@ -1452,8 +1459,9 @@ def main():
                     retreat=current[:2]-.35*np.array([math.cos(r['yaw']),math.sin(r['yaw'])])
                     yield from navigate(r,retreat)
                     r.update(item=None,originals=[],carrying=False,destination_shelf=None)
-                    event(r,'return_to_clear_front_apron')
-                    yield from navigate(r,r['home'][:2],yaw=0.)
+                    if not args.fast_cleanup:
+                        event(r,'return_to_clear_front_apron')
+                        yield from navigate(r,r['home'][:2],yaw=0.)
                 except Exception as exc:
                     if left_corridor_owner[0]==r['id']:left_corridor_owner[0]=None
                     if rear_zone_owner[0]==r['id']:rear_zone_owner[0]=None

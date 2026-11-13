@@ -15,6 +15,11 @@ remains visible. The launcher enables `-Fast` to stop candidate search at the
 first feasible checked task; `-Fast:$false` restores exhaustive ranking.
 No full-cleanup speedup has yet been measured for this option. Oversized beams
 remain blocked on the existing racks.
+Fast mode also removes fixed object-family preferences, uses a checked direct
+carrying route when available instead of a compulsory front-apron detour, and
+requests the next task after backing out from a verified placement instead of
+returning home after every object. Idle robots still park to clear aisles.
+Grasp, load clearance, exclusive rack reservations and settling checks remain.
 
 Each robot first tries its original object family, then other available floor
 objects. Reservations cover both object identity and the object's projected
