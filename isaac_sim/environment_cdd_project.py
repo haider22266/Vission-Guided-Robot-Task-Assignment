@@ -151,7 +151,7 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         environment_jobs=existing_prop_jobs(stage)
-        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face
+        from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres
         route_reservations=RouteReservations()
         concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
@@ -957,17 +957,20 @@ def main():
                     seed=joints
             return True
 
-        def fit_actual_placement(r,item,pallet_lo,pallet_hi,rack_yaw):
+        def fit_actual_placement(r,item,pallet_lo,pallet_hi,rack_yaw,tried=None):
             """Adjust reservation/dock through robot motion, never object edits."""
             import omni.physx
             original=dict(r['cleanup_slot'])
+            tried=set(tried or ())|{original['path']}
             offsets=sorted([(x,y) for x in (0.,-.04,.04,-.08,.08) for y in (0.,-.04,.04,-.08,.08)],key=lambda pair:math.hypot(*pair))
-            docks=sorted([(d,y) for d in (0.,.035,-.06,-.12) for y in (0.,-.08,.08,-.16,.16)],key=lambda pair:math.hypot(*pair))
+            docks=sorted([(d,y) for d in (0.,.035,.08,.14,-.06,-.12,-.20) for y in (0.,-.08,.08,-.16,.16)],key=lambda pair:math.hypot(*pair))
             for round_index in range(3):
                 r['solver'].set_robot_base_pose(*pose(r['shoulder']))
                 tcp=r['ik'].compute_end_effector_pose()[0]
                 body_lo,body_hi=exact_payload_bounds(item)
                 box_center=(body_lo+body_hi)/2
+                centres=[(original['centre_x']+dx,original['y']+dy) for dx,dy in offsets]
+                centres+=supported_centres(pallet_lo,pallet_hi,(body_hi-body_lo)/2,(original['centre_x'],original['y']))
                 base=pose(r['base'])[0]
                 shoulder,orientation=pose(r['shoulder'])
                 nav=planner(r)
@@ -976,8 +979,8 @@ def main():
                     delta=np.array([forward*math.cos(rack_yaw),lateral,0.])
                     goal=base[:2]+delta[:2]
                     if not nav.free(goal) or not nav.clear(base[:2],goal) or not traffic_clear(r,goal):continue
-                    for dx,dy in offsets:
-                        cx,cy=original['centre_x']+dx,original['y']+dy
+                    for candidate_index,(cx,cy) in enumerate(centres):
+                        if candidate_index and candidate_index%24==0:yield
                         if not (pallet_lo[0]+.005<=cx<=pallet_hi[0]-.005 and pallet_lo[1]+.005<=cy<=pallet_hi[1]-.005):continue
                         shift=np.array([cx-box_center[0],cy-box_center[1],0.])
                         box=(float(body_lo[0]+shift[0]),float(body_lo[1]+shift[1]),float(body_hi[0]+shift[0]),float(body_hi[1]+shift[1]))
@@ -999,7 +1002,52 @@ def main():
                 if chosen is None:
                     print('PLACEMENT_DIAGNOSTIC',r['id'],'tcp',tcp,'bounds',body_lo,body_hi,'base',base,
                           'slot',original,'last_ik_failure',r.get('placement_ik_failure'),flush=True)
-                    raise RuntimeError('No reachable placement/retreat path for actual carried grasp on reserved pallet')
+                    # Keep the actual grasp and try another existing support
+                    # with the same approach orientation; no object-pose edit.
+                    if len(tried)<3:
+                        for pallet in sorted(cleanup_pallets,key=lambda p:math.dist(((p['lo']+p['hi'])/2)[:2],base[:2])):
+                            path=pallet['path']
+                            if path in tried:continue
+                            allowed=(math.pi,) if '/Shelf_0/' in path else ((0.,) if '/Shelf_2/' in path else (0.,math.pi))
+                            if rack_yaw not in allowed:continue
+                            plo,phi=pallet['lo'],pallet['hi']
+                            shelf=path.split('/SM_')[0]
+                            slo,shi=bounds([stage.GetPrimAtPath(shelf)])
+                            toward=np.array([math.cos(rack_yaw),math.sin(rack_yaw)])
+                            edge=shi[0] if rack_yaw==math.pi else slo[0]
+                            for cx,cy in supported_centres(plo,phi,(body_hi-body_lo)/2,((plo[0]+phi[0])/2,original['y'])):
+                                yield
+                                shift=np.array([cx-box_center[0],cy-box_center[1],0.])
+                                box=(float(body_lo[0]+shift[0]),float(body_lo[1]+shift[1]),float(body_hi[0]+shift[0]),float(body_hi[1]+shift[1]))
+                                slot=dict(original,path=path,centre_x=float(cx),y=float(cy),box=box)
+                                if not cleanup.can_retarget(r['cleanup_id'],slot):continue
+                                hit=omni.physx.get_physx_scene_query_interface().raycast_closest((float(cx),float(cy),float(phi[2]+.15)),(0.,0.,-1.),.6)
+                                if not hit['hit'] or not any(str(hit.get(k,'')).startswith(path) for k in ('rigidBody','collision')):continue
+                                support_z=float(phi[2]+.15-hit['distance'])
+                                shift[2]=support_z+.003-body_lo[2]
+                                goal=np.array([edge-toward[0]*.70,cy])
+                                delta=np.array([*(goal-base[:2]),0.])
+                                if not placement_path_feasible(r,tcp+delta,tcp+shift,(shoulder+delta,orientation)):continue
+                                old_shelf=r['destination_shelf']
+                                r['destination_shelf']=shelf
+                                try:planner(r).plan(base[:2],goal)
+                                except ValueError:
+                                    r['destination_shelf']=old_shelf
+                                    continue
+                                # No yield between final lease check and update.
+                                if not cleanup.can_retarget(r['cleanup_id'],slot):
+                                    r['destination_shelf']=old_shelf
+                                    continue
+                                slot['support_z']=support_z
+                                cleanup.retarget(r['cleanup_id'],slot)
+                                r['cleanup_slot']=slot
+                                r['rack_path']=path
+                                event(r,'retry_actual_grasp_on_alternative_existing_pallet')
+                                r['solver'].set_robot_base_pose(*pose(r['shoulder']))
+                                yield from navigate(r,goal,yaw=rack_yaw)
+                                return (yield from fit_actual_placement(r,item,plo,phi,rack_yaw,tried))
+                    r['solver'].set_robot_base_pose(*pose(r['shoulder']))
+                    raise RuntimeError('No reachable placement/retreat path after checked existing-pallet alternatives')
                 slot,goal,destination,support_z,shift=chosen
                 slot['support_z']=support_z
                 cleanup.retarget(r['cleanup_id'],slot)
@@ -1155,6 +1203,8 @@ def main():
                 r['drop_goal']=(body_center+shift).tolist()
                 if cleanup is not None:
                     destination,support_z,rack_y=yield from fit_actual_placement(r,item,lo,hi,rack_yaw)
+                    pallet_path=r['cleanup_slot']['path']
+                    lo,hi=bounds([stage.GetPrimAtPath(pallet_path)])
                 event(r,'place_on_existing_rack_pallet')
                 yield from arm_to(r,destination+[0,0,.06],closed=True)
                 yield from arm_to(r,destination,closed=True)

@@ -50,6 +50,19 @@ def upper_face(directions):
     return axis,1. if directions[axis][2]>=0 else -1.,[i for i in range(3) if i!=axis]
 
 
+def supported_centres(low,high,half,preferred,step=.12):
+    """Nearest-first pallet positions that fully support the measured XY load."""
+    axes=[]
+    for i in range(2):
+        first,last=low[i]+half[i]+.015,high[i]-half[i]-.015
+        if first>last:return []
+        values=[first,last,min(last,max(first,preferred[i]))]
+        values += [first+n*step for n in range(int((last-first)/step)+1)]
+        axes.append(sorted(set(values)))
+    return sorted([(x,y) for x in axes[0] for y in axes[1]],
+                  key=lambda p:math.dist(p,preferred))
+
+
 class CleanupQueue:
     def __init__(self,groups,unknown=(),static_occupancy=()):
         self.items={g['id']:{'id':g['id'],'kind':g['kind'],'paths':g['paths'],'state':'pending',

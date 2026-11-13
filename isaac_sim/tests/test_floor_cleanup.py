@@ -3,7 +3,16 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face
+from floor_cleanup import CleanupQueue,floor_groups,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres
+
+
+def test_alternative_placement_centres_cover_support_without_overhang():
+    positions=supported_centres((0.,0.),(1.,2.),(.2,.3),(.3,.4))
+    assert positions[0]==(.3,.4)
+    assert any(y>1.5 for x,y in positions)
+    assert any(x>.7 for x,y in positions)
+    assert all(.215<=x<=.785 and .315<=y<=1.685 for x,y in positions)
+    assert supported_centres((0.,0.),(.3,.3),(.2,.2),(0.,0.))==[]
 
 
 @pytest.mark.parametrize('directions,expected',[

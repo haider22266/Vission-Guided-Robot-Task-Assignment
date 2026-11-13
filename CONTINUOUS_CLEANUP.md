@@ -43,6 +43,19 @@ object-pose edits to simulate a successful placement. The placement regression
 stored a normal carton with 3.8 mm error; the oversized-beam regression correctly
 made no pickup. See `reports/stuck_robot_fix_validation.json` for scope and limits.
 
+For an actual carried grasp that cannot reach its reserved placement, the
+controller now checks the usable measured pallet footprint beyond the former
+eight-centimetre adjustment window. It also checks additional docking offsets.
+If necessary, it can atomically move its reservation to another existing pallet
+with the same approach orientation, after checking free space, support raycast,
+route and continuous placement/retreat IK. The final settling check uses that
+new pallet's bounds. At most three pallet attempts are made; an unresolved
+placement uses the verified recovery path rather than forcing success. These
+new alternatives pass the 79-test logic suite and compilation, but have not
+yet been physically exercised in Isaac because the user's simulation was
+already running during the edit. Earlier placement results above predate this
+expanded alternative search.
+
 The existing controller approaches, aligns, verifies contact, performs its
 assisted grasp/lift, carries, places and releases the object. It checks support
 and settling, then backs out and requests another job. Completed objects stay
