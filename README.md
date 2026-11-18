@@ -1,5 +1,16 @@
 # Disaster-response robotics with CDD and Isaac Sim 5.1
 
+For the new **five-small-box completion demo**:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1
+```
+
+This reduced scene verified 5/5 stored boxes in 60.267 simulated seconds,
+with all five robots moving concurrently at peak. See [SMALL_CLEANUP.md](SMALL_CLEANUP.md)
+for its scope and measured results. It does not establish completion of the
+original dense 88-prop scene described below.
+
 Five Ridgeback–Franka robots operate in an existing warehouse with props and
 racks. Mounted RGB cameras send live images to a separately running EfficientNetB0
 classifier trained on the Comprehensive Disaster Dataset (CDD). Predicted risks

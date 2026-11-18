@@ -1,12 +1,21 @@
-For the current CDD classifier, five robot camera feeds, task visualization and
+For the reduced version with five small boxes and verified 5/5 task completion:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1
+```
+
+Run from the workspace root. See [SMALL_CLEANUP.md](../SMALL_CLEANUP.md).
+
+For the larger environment with optional CDD classifier, robot camera feeds, task visualization and
 continuous warehouse cleanup, run from the workspace root:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\run_environment_cdd.ps1
 ```
 
-Close an existing warehouse instance first. Omit `-Headless` for the 3D window
-and the **Live robot cameras and CDD predictions** panel. See
+Close an existing warehouse instance first. Omit `-Headless` for the 3D window.
+Robot cameras are disabled by default; `-PerceptionBackend efficientnet` restores
+the **Live robot cameras and CDD predictions** panel. See
 [ENVIRONMENT_CDD_PROJECT.md](../ENVIRONMENT_CDD_PROJECT.md) for details.
 
 For the earlier five-robot pick-and-place workflow with a fixed camera and an

@@ -24,6 +24,7 @@ def arguments():
     p.add_argument('--scene', type=Path, default=SOURCE_DIR/'warehouse_verified.usd')
     p.add_argument('--perception-backend',choices=('off','mock','efficientnet'),default='off')
     p.add_argument('--fast-cleanup',action='store_true',help='Claim the first feasible checked task instead of exhaustively ranking grasp candidates')
+    p.add_argument('--small-demo',action='store_true',help='Separate five-small-prop scene; exclude original floor clutter before physics starts')
     p.add_argument('--efficientnet-model',type=Path,default=Path(__file__).resolve().parents[1]/'models/cdd/efficientnet_cdd.keras')
     p.add_argument('--classifier-python',default=sys.executable,help='Python environment containing TensorFlow')
     p.add_argument('--classifier-wsl',action='store_true')
@@ -150,12 +151,19 @@ def main():
             joint.CreateCollisionEnabledAttr(False)
 
         from warehouse_environment_jobs import existing_prop_jobs
-        environment_jobs=existing_prop_jobs(stage)
+        if args.small_demo:
+            from small_cleanup_scene import prepare_small_cleanup
+            environment_jobs=prepare_small_cleanup(stage)
+        else:
+            environment_jobs=existing_prop_jobs(stage)
         from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred,idle_clear_due
         route_reservations=RouteReservations()
         concurrent_cleanup=args.tasks_per_robot==0 and not args.serial_cleanup
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
-        cleanup_groups,unknown_components=floor_groups(list(stage.GetPrimAtPath('/World/DisasterAftermath/Props').GetChildren()))
+        floor_prims=list(stage.GetPrimAtPath('/World/DisasterAftermath/Props').GetChildren())
+        if args.small_demo:
+            floor_prims=[p for p in floor_prims if p.GetName().startswith('Debris_Demo_')]
+        cleanup_groups,unknown_components=floor_groups(floor_prims)
         cleanup=CleanupQueue(cleanup_groups,unknown_components) if args.tasks_per_robot==0 else None
         cleanup_by_id={g['id']:g for g in cleanup_groups}
         cleanup_pallets=[]
@@ -690,7 +698,7 @@ def main():
         def down(yaw):
             return np.array([0.,math.cos(yaw/2),math.sin(yaw/2),0.])
 
-        def arm_to(r,target,seconds=2.,closed=False):
+        def arm_to(r,target,seconds=2.,closed=False,arrival_tolerance=.004):
             solver,ik = r['solver'],r['ik']
             solver.set_robot_base_pose(*pose(r['shoulder']))
             start = ik.compute_end_effector_pose()[0]
@@ -705,7 +713,7 @@ def main():
                 r['robot'].apply_action(action)
                 r['robot'].apply_action(ArticulationAction(joint_positions=np.array([.012,.012] if closed else [.04,.04]),joint_indices=r['fingers']))
                 yield
-                if t==1 and np.linalg.norm(ik.compute_end_effector_pose()[0]-target)<.004:
+                if t==1 and np.linalg.norm(ik.compute_end_effector_pose()[0]-target)<arrival_tolerance:
                     return
             tip=ik.compute_end_effector_pose()[0]
             actual_tip=matrix(r['hand']).Transform(Gf.Vec3d(0,0,.10))
@@ -832,7 +840,8 @@ def main():
             for i,original in enumerate(originals):
                 destination = Sdf.Path(path+'/Part_%02d'%i)
                 original_matrix = UsdGeom.XformCache().GetLocalToWorldTransform(original)
-                if not Sdf.CopySpec(stage.GetRootLayer(),original.GetPath(),stage.GetSessionLayer(),destination):
+                source_layer=stage.GetSessionLayer() if args.small_demo else stage.GetRootLayer()
+                if not Sdf.CopySpec(source_layer,original.GetPath(),stage.GetSessionLayer(),destination):
                     raise RuntimeError('Cannot transfer floor prop '+str(original.GetPath()))
                 part = stage.GetPrimAtPath(destination)
                 relative = original_matrix*Gf.Matrix4d().SetTranslate(Gf.Vec3d(*(-center)))
@@ -916,7 +925,10 @@ def main():
                     event(r,'surface_contact_verified')
                     return
                 # Only the arm moves. Original props remain at their source pose.
-                yield from arm_to(r,grip-[0,0,.001*(attempt+1)],seconds=.25,closed=True)
+                # A contact probe is expected to stop against the surface;
+                # success still requires measured force AND visible contact.
+                yield from arm_to(r,grip-[0,0,.001*(attempt+1)],seconds=.25,closed=True,
+                                  arrival_tolerance=.012 if args.small_demo else .004)
             raise RuntimeError('No verified visible surface contact; refusing attachment')
 
         # These are existing bottom-rack pallets, not a new front workbench.
@@ -1701,7 +1713,8 @@ def main():
                     if cleanup is not None and job.get('cleanup_object_id'):
                         cleanup.items[job['cleanup_object_id']].update(state='failed',reason=r['failure'])
 
-        report=dict(scene=str(args.scene.resolve()),mode='mobile planar-drive physics; original floor props; assisted grasp',
+        report=dict(scene=str(args.scene.resolve()),mode='mobile planar-drive physics; assisted grasp',
+                    scenario='five small isolated boxes' if args.small_demo else 'original disaster floor props',
                     reserved_original_paths=sorted(reserved),requested_max_tasks_per_robot=args.tasks_per_robot,
                     simulated_seconds=round(clock[0]/60,3),camera='fixed 28 mm perspective',camera_unchanged=bool(camera_unchanged),
                     execution='concurrent shared physics frames',robots=[])
