@@ -29,7 +29,11 @@ For the previously validated batched version, run:
 powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout batched
 ```
 
-Close any other warehouse simulation first. This opens the existing warehouse,
+Close any other warehouse simulation first, or add `-Restart` to gracefully
+close an existing warehouse window and start a
+fresh run. If shutdown has not finished after 30 seconds, the launcher stops
+instead of starting a duplicate. Restarting resets the current run's progress.
+This opens the existing warehouse,
 five Ridgeback–Franka robots and original racks with 20 coloured-box tasks,
 released in four batches of five 24 cm boxes. Each robot can claim a box, approach, verify surface contact,
 lift, carry to a nearby feasible rack, release and verify support. Reservations

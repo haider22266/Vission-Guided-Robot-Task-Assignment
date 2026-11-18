@@ -4,6 +4,7 @@ param(
     [ValidateSet('grouped','pile','batched')][string]$Layout='grouped',
     [switch]$Headless,
     [double]$Duration=0,
+    [switch]$Restart,
     [switch]$ExitOnComplete
 )
 $ErrorActionPreference='Stop'
@@ -13,7 +14,24 @@ if (-not (Test-Path -LiteralPath $runner)) { throw "Isaac launcher missing: $run
 $running=Get-CimInstance Win32_Process -Filter "Name='kit.exe'" | Where-Object {
     $_.CommandLine -match 'environment_(cdd_project|small_tasks)\.py'
 }
-if ($running) { throw 'Close the existing warehouse simulation before starting the small-task version.' }
+if ($running -and -not $Restart) {
+    $runningIds=($running.ProcessId -join ', ')
+    throw "Warehouse simulation already running (PID $runningIds). Close its window, or add -Restart to close it gracefully and start a fresh run."
+}
+if ($running -and $Restart) {
+    foreach ($instance in $running) {
+        $existingProcess=Get-Process -Id $instance.ProcessId -ErrorAction SilentlyContinue
+        if (-not $existingProcess) { continue }
+        Write-Host "Closing warehouse simulation PID $($instance.ProcessId) before restarting..."
+        if (-not $existingProcess.CloseMainWindow()) {
+            throw "Warehouse PID $($instance.ProcessId) has no closable window. Stop that specific run in its terminal, then retry."
+        }
+        Wait-Process -Id $instance.ProcessId -Timeout 30 -ErrorAction SilentlyContinue
+        if (Get-Process -Id $instance.ProcessId -ErrorAction SilentlyContinue) {
+            throw "Warehouse PID $($instance.ProcessId) is still shutting down. Wait for it to exit, then retry."
+        }
+    }
+}
 if ($Headless -and $Duration -eq 0) { $Duration=600 }
 $runArgs=@('isaac_sim/environment_small_tasks.py','--duration',"$Duration",'--small-task-count',"$TaskCount",'--small-layout',$Layout)
 if ($Headless) { $runArgs+='--headless' }
