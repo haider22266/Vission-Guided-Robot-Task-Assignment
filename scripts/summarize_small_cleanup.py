@@ -6,21 +6,29 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--count',type=int,choices=(5,20),default=20)
-parser.add_argument('--layout',choices=('batched','grouped','pile'),default='batched')
+parser.add_argument('--layout',choices=('batched','grouped','pile','mixed'),default='batched')
 args=parser.parse_args()
 name='small_cleanup_validation' if args.count==5 else 'small_cleanup_20_validation'
 if args.layout!='batched':name=args.layout+'_cleanup_%d_validation'%args.count
 source=root/'results/cdd'/(name+'.json')
 report=json.loads(source.read_text(encoding='utf-8'))
 summary=dict(scenario=report['scenario'],simulated_seconds=report['simulated_seconds'],
-    total_tasks=args.count,layout=args.layout,initial_active_floor_boxes=5 if args.layout=='batched' else args.count,
-    release_policy=('Four batches of five' if args.count==20 else 'One batch of five') if args.layout=='batched' else 'All tasks visible and available from startup',
+    total_tasks=args.count,layout=args.layout,initial_visible_props=5 if args.layout=='batched' else args.count,
+    release_policy=('All props visible and colliding from startup; one task per family dispatched per round' if args.layout=='mixed' else
+                    (('Four batches of five' if args.count==20 else 'One batch of five') if args.layout=='batched' else 'All tasks visible and available from startup')),
     counts=report['cleanup']['counts'],all_tasks_stored=report['cleanup']['floor_clean'],
     camera_unchanged=report['camera_unchanged'],perception=report['research_pipeline']['perception_backend'],
     navigation={k:v for k,v in report['navigation'].items() if k!='route_events'},
     robots=[dict(robot=r['robot'],success=r['success'],failure=r['failure'],
                  travel_distance_m=r['travel_distance_m'],placements=r['completed_jobs']) for r in report['robots']],
-    limitations='%d newly prepared 24 cm box tasks; %s layout; original racks and five robots; session-only scene changes. '%(args.count,args.layout)+
+    limitations='%d newly prepared small-prop tasks; %s layout; original racks and five robots; session-only scene changes. '%(args.count,args.layout)+
                 'This is a reduced assisted-grasp completion demo, not completion of the original 88-prop scene, '
                 'not QMIX, and not an evaluation of the image classifier.')
+if args.layout=='mixed':
+    prefixes={'Rear-left carton':'Rear_Left_Carton_', 'Aisle rubble':'Debris_Mixed_',
+              'Screwdriver':'Tool_Screwdriver_Handle_', 'Rear beam':'Rear_Right_Beam_',
+              'Rear-right carton':'Rear_Right_Carton_'}
+    jobs=[j for r in report['robots'] for j in r['completed_jobs']]
+    summary['completed_task_families']={label:sum((j.get('cleanup_object_id') or '').rsplit('/',1)[-1].startswith(prefix)
+                                                   for j in jobs) for label,prefix in prefixes.items()}
 (root/'reports'/(name+'.json')).write_text(json.dumps(summary,indent=2)+'\n',encoding='utf-8')

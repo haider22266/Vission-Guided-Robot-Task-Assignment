@@ -1,0 +1,960 @@
+{
+  "scenario": "20 mixed disaster-prop tasks",
+  "simulated_seconds": 478.5,
+  "total_tasks": 20,
+  "layout": "mixed",
+  "initial_visible_props": 20,
+  "release_policy": "All props visible and colliding from startup; one task per family dispatched per round",
+  "counts": {
+    "pending": 0,
+    "assigned": 0,
+    "stored": 20,
+    "blocked": 0,
+    "failed": 0,
+    "waiting": 0
+  },
+  "all_tasks_stored": true,
+  "camera_unchanged": true,
+  "perception": "off",
+  "navigation": {
+    "mode": "concurrent spatial route reservations and live local avoidance",
+    "peak_moving_robots": 5,
+    "overlap_frames": 14915,
+    "peak_reserved_routes": 5,
+    "route_conflict_yields": 270
+  },
+  "robots": [
+    {
+      "robot": "Robot_01",
+      "success": true,
+      "failure": null,
+      "travel_distance_m": 88.143,
+      "placements": [
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_00"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 2.3016409145882513,
+          "support_z": 0.20890492146194506,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_00",
+          "object_kind": "carton",
+          "expected_position": [
+            -8.927899800110609,
+            2.3016409145882513,
+            0.34217445228536136
+          ],
+          "payload_path": "/World/RobotTasks/Payload_01_00",
+          "contact_check": {
+            "visible_gaps_m": [
+              8.881784197001252e-16,
+              8.881784197001252e-16
+            ],
+            "forces_N": [
+              12.03380298614502,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              8.881784197001252e-16,
+              8.881784197001252e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841407716274261,
+            "relative_drift_m": 3.8952665535668564e-07
+          },
+          "placement_error_m": 0.003656561915123603,
+          "final_position": [
+            -8.930127143859863,
+            2.2986698150634766,
+            0.33908599615097046
+          ],
+          "support_gap_m": -0.00034470951942947026,
+          "final_speed_m_s": 6.745316204614937e-05,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_01"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_319/SM_PaletteA_01",
+          "rack_slot_y": 3.5185589553201417,
+          "support_z": 0.20926295166194964,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_01",
+          "object_kind": "carton",
+          "expected_position": [
+            -8.945026649766561,
+            3.5185589553201417,
+            0.3426256088572577
+          ],
+          "payload_path": "/World/RobotTasks/Payload_01_01",
+          "contact_check": {
+            "visible_gaps_m": [
+              8.881784197001252e-16,
+              8.881784197001252e-16
+            ],
+            "forces_N": [
+              10.352588653564453,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06840655207633972,
+            "relative_drift_m": 1.4129000383311981e-06
+          },
+          "placement_error_m": 0.0032621505378664078,
+          "final_position": [
+            -8.94453239440918,
+            3.518515110015869,
+            0.3393706977367401
+          ],
+          "support_gap_m": -0.0007425702029875136,
+          "final_speed_m_s": 0.0004386449872981757,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_02"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_5/SM_PaletteA_01",
+          "rack_slot_y": 5.376823377592336,
+          "support_z": 0.20925450270355272,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_02",
+          "object_kind": "carton",
+          "expected_position": [
+            -8.848199801892044,
+            5.376823377592336,
+            0.34256281059007976
+          ],
+          "payload_path": "/World/RobotTasks/Payload_01_02",
+          "contact_check": {
+            "visible_gaps_m": [
+              1.7763568394002505e-15,
+              8.881784197001252e-16
+            ],
+            "forces_N": [
+              12.259153366088867,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              8.881784197001252e-16,
+              8.881784197001252e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06840984523296356,
+            "relative_drift_m": 8.530110811782516e-07
+          },
+          "placement_error_m": 0.0037576059803048605,
+          "final_position": [
+            -8.850714683532715,
+            5.375926494598389,
+            0.33908823132514954
+          ],
+          "support_gap_m": -0.0006993501722038775,
+          "final_speed_m_s": 0.00011773552250815555,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_03"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_5/SM_PaletteA_01",
+          "rack_slot_y": 4.99682337431408,
+          "support_z": 0.2088580573099904,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Left_Carton_Mixed_03",
+          "object_kind": "carton",
+          "expected_position": [
+            -8.868199805170299,
+            4.99682337431408,
+            0.3422256341604739
+          ],
+          "payload_path": "/World/RobotTasks/Payload_01_03",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              0.0
+            ],
+            "forces_N": [
+              11.406982421875,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06840775907039642,
+            "relative_drift_m": 2.2513916489476684e-06
+          },
+          "placement_error_m": 0.004993180746090271,
+          "final_position": [
+            -8.867422103881836,
+            5.00051736831665,
+            0.3386944532394409
+          ],
+          "support_gap_m": -0.00025927519445828606,
+          "final_speed_m_s": 0.0005460932152345777,
+          "still_stored": true
+        }
+      ]
+    },
+    {
+      "robot": "Robot_02",
+      "success": true,
+      "failure": null,
+      "travel_distance_m": 70.674,
+      "placements": [
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Debris_Mixed_00"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -2.8115589711228246,
+          "support_z": 0.20908940846989615,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Debris_Mixed_00",
+          "object_kind": "debris",
+          "expected_position": [
+            -0.7559731352618361,
+            -2.8115589711228246,
+            0.29230391302418907
+          ],
+          "payload_path": "/World/RobotTasks/Payload_02_00",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              0.0
+            ],
+            "forces_N": [
+              11.136981964111328,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841714680194855,
+            "relative_drift_m": 1.7342034316082197e-06
+          },
+          "placement_error_m": 0.003093427239218333,
+          "final_position": [
+            -0.7563192248344421,
+            -2.811549186706543,
+            0.2891952693462372
+          ],
+          "support_gap_m": -0.0005710224766304617,
+          "final_speed_m_s": 0.000475741398986429,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Debris_Mixed_01"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -2.448176447617043,
+          "support_z": 0.20913201088974936,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Debris_Mixed_01",
+          "object_kind": "debris",
+          "expected_position": [
+            -0.7559731352618361,
+            -2.448176447617043,
+            0.2923468610215035
+          ],
+          "payload_path": "/World/RobotTasks/Payload_02_01",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              0.0
+            ],
+            "forces_N": [
+              11.037247657775879,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841640174388885,
+            "relative_drift_m": 1.0314773867382812e-06
+          },
+          "placement_error_m": 0.003087667192453529,
+          "final_position": [
+            -0.7562720775604248,
+            -2.44818115234375,
+            0.28921541571617126
+          ],
+          "support_gap_m": -0.0006162864773065491,
+          "final_speed_m_s": 0.00032193679362535477,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Debris_Mixed_02"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -2.5681764476170432,
+          "support_z": 0.20916784818242057,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Debris_Mixed_02",
+          "object_kind": "debris",
+          "expected_position": [
+            -8.943099801633505,
+            -2.5681764476170432,
+            0.2923826066229948
+          ],
+          "payload_path": "/World/RobotTasks/Payload_02_02",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              2.7755575615628914e-17
+            ],
+            "forces_N": [
+              10.99409008026123,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841710209846497,
+            "relative_drift_m": 9.551987751424492e-07
+          },
+          "placement_error_m": 0.0036510937817287943,
+          "final_position": [
+            -8.941696166992188,
+            -2.568187713623047,
+            0.28902262449264526
+          ],
+          "support_gap_m": -0.0006315179295026119,
+          "final_speed_m_s": 9.312608017353341e-05,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Debris_Mixed_03"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 1.9450234380940317,
+          "support_z": 0.2084405267733388,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Debris_Mixed_03",
+          "object_kind": "debris",
+          "expected_position": [
+            -8.917899802196771,
+            1.9450234380940317,
+            0.29165665949893915
+          ],
+          "payload_path": "/World/RobotTasks/Payload_02_03",
+          "contact_check": {
+            "visible_gaps_m": [
+              2.220446049250313e-16,
+              0.0
+            ],
+            "forces_N": [
+              11.626834869384766,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.0684165507555008,
+            "relative_drift_m": 1.2183522245951672e-06
+          },
+          "placement_error_m": 0.0033635101245128966,
+          "final_position": [
+            -8.915406227111816,
+            1.9458404779434204,
+            0.28892940282821655
+          ],
+          "support_gap_m": 8.487571128432125e-05,
+          "final_speed_m_s": 0.00014722099876962602,
+          "still_stored": true
+        }
+      ]
+    },
+    {
+      "robot": "Robot_03",
+      "success": true,
+      "failure": null,
+      "travel_distance_m": 96.251,
+      "placements": [
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_00",
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Shaft_Mixed_00"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -3.053176445977916,
+          "support_z": 0.20838735516140922,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_00",
+          "object_kind": "tool",
+          "expected_position": [
+            0.1168988996003616,
+            -3.0531761920108518,
+            0.2814730398012945
+          ],
+          "payload_path": "/World/RobotTasks/Payload_03_00",
+          "contact_check": {
+            "visible_gaps_m": [
+              4.449557262054371e-16,
+              1.2563805882055718e-15
+            ],
+            "forces_N": [
+              8.77315616607666,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              4.449557262054371e-16,
+              8.886119947416683e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06842691451311111,
+            "relative_drift_m": 8.285098227888723e-07
+          },
+          "placement_error_m": 0.0035252161643619636,
+          "final_position": [
+            0.11738990247249603,
+            -3.0529937744140625,
+            0.2787623405456543
+          ],
+          "support_gap_m": 0.00015464213866200893,
+          "final_speed_m_s": 6.365189619828016e-05,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_01",
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Shaft_Mixed_01"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -2.4531764459779155,
+          "support_z": 0.20911466593811973,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_01",
+          "object_kind": "tool",
+          "expected_position": [
+            0.11689946509737426,
+            -2.4531762900628364,
+            0.2822008495702189
+          ],
+          "payload_path": "/World/RobotTasks/Payload_03_01",
+          "contact_check": {
+            "visible_gaps_m": [
+              4.440892098500626e-16,
+              4.449557262054371e-16
+            ],
+            "forces_N": [
+              9.611351013183594,
+              0.24560879170894623
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              4.449557262054371e-16,
+              4.440892098500626e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06843101233243942,
+            "relative_drift_m": 1.5434169087885784e-06
+          },
+          "placement_error_m": 0.003601296717163142,
+          "final_position": [
+            0.11619994044303894,
+            -2.4532182216644287,
+            0.27877432107925415
+          ],
+          "support_gap_m": -0.0005719780272481767,
+          "final_speed_m_s": 5.629119914374314e-05,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_02",
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Shaft_Mixed_02"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -3.053176445977916,
+          "support_z": 0.20838735516140922,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_02",
+          "object_kind": "tool",
+          "expected_position": [
+            -8.883101222659548,
+            -3.053176145999599,
+            0.2814729196942684
+          ],
+          "payload_path": "/World/RobotTasks/Payload_03_02",
+          "contact_check": {
+            "visible_gaps_m": [
+              6.286500016609089e-16,
+              6.280369834735101e-16
+            ],
+            "forces_N": [
+              8.737883567810059,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              6.286500016609089e-16,
+              6.280369834735101e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.0684267058968544,
+            "relative_drift_m": 9.730968026114202e-07
+          },
+          "placement_error_m": 0.0035242692849305345,
+          "final_position": [
+            -8.88261604309082,
+            -3.0529940128326416,
+            0.2787625789642334
+          ],
+          "support_gap_m": 0.00015491446296639344,
+          "final_speed_m_s": 0.00013036871678195894,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_03",
+            "/World/DisasterAftermath/Props/Tool_Screwdriver_Shaft_Mixed_03"
+          ],
+          "rack_path": "/Root/Shelf_0/SM_PaletteA_318/SM_PaletteA_01",
+          "rack_slot_y": 7.286773951172099,
+          "support_z": 0.20838738923252154,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Tool_Screwdriver_Handle_Mixed_03",
+          "object_kind": "tool",
+          "expected_position": [
+            -8.778204171169387,
+            7.286774235076811,
+            0.28147296871152483
+          ],
+          "payload_path": "/World/RobotTasks/Payload_03_03",
+          "contact_check": {
+            "visible_gaps_m": [
+              4.449557262054371e-16,
+              4.449557262054371e-16
+            ],
+            "forces_N": [
+              8.753129005432129,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              4.449557262054371e-16,
+              6.286500016609089e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06842663139104843,
+            "relative_drift_m": 7.693450720733833e-07
+          },
+          "placement_error_m": 0.0034968601052242595,
+          "final_position": [
+            -8.777813911437988,
+            7.28684663772583,
+            0.2787628769874573
+          ],
+          "support_gap_m": 0.00015530031512256404,
+          "final_speed_m_s": 1.1023318620573264e-05,
+          "still_stored": true
+        }
+      ]
+    },
+    {
+      "robot": "Robot_04",
+      "success": true,
+      "failure": null,
+      "travel_distance_m": 142.485,
+      "placements": [
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_00"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 2.3016409145882513,
+          "support_z": 0.20868024175346422,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_00",
+          "object_kind": "beam",
+          "expected_position": [
+            0.14209999529644757,
+            2.3016409145882513,
+            0.29177830985361475
+          ],
+          "payload_path": "/World/RobotTasks/Payload_04_00",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              4.440892098500626e-16
+            ],
+            "forces_N": [
+              12.053526878356934,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841756403446198,
+            "relative_drift_m": 4.161275743315702e-07
+          },
+          "placement_error_m": 0.003602585627983759,
+          "final_position": [
+            0.14256706833839417,
+            2.3017654418945312,
+            0.2887630760669708
+          ],
+          "support_gap_m": -0.00013735280120069637,
+          "final_speed_m_s": 0.0003374818479642272,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_01"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 2.3016409145882513,
+          "support_z": 0.2087423199909978,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_01",
+          "object_kind": "beam",
+          "expected_position": [
+            -0.7907731344839984,
+            2.301640914588251,
+            0.291840401121199
+          ],
+          "payload_path": "/World/RobotTasks/Payload_04_01",
+          "contact_check": {
+            "visible_gaps_m": [
+              6.280369834735101e-16,
+              0.0
+            ],
+            "forces_N": [
+              11.871780395507812,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.0684175044298172,
+            "relative_drift_m": 3.2172293240564e-07
+          },
+          "placement_error_m": 0.0038509196858361235,
+          "final_position": [
+            -0.7918940782546997,
+            2.3016304969787598,
+            0.28884410858154297
+          ],
+          "support_gap_m": -0.0002511509416179558,
+          "final_speed_m_s": 0.000560305779799819,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_02"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_5/SM_PaletteA_01",
+          "rack_slot_y": 5.088440852298415,
+          "support_z": 0.20868024175346422,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_02",
+          "object_kind": "beam",
+          "expected_position": [
+            0.2217999935150129,
+            5.088440852298415,
+            0.291778307918073
+          ],
+          "payload_path": "/World/RobotTasks/Payload_04_02",
+          "contact_check": {
+            "visible_gaps_m": [
+              4.440892098500626e-16,
+              0.0
+            ],
+            "forces_N": [
+              11.913839340209961,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841634213924408,
+            "relative_drift_m": 1.043060978580541e-06
+          },
+          "placement_error_m": 0.0036437691815853195,
+          "final_position": [
+            0.2223629206418991,
+            5.088564395904541,
+            0.2887624502182007
+          ],
+          "support_gap_m": -0.00013794991521365318,
+          "final_speed_m_s": 5.6419935390294995e-06,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_03"
+          ],
+          "rack_path": "/Root/Shelf_1/SM_PaletteA_5/SM_PaletteA_01",
+          "rack_slot_y": 5.088440852298415,
+          "support_z": 0.2087423199909978,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Beam_Mixed_03",
+          "object_kind": "beam",
+          "expected_position": [
+            -0.7110731362654331,
+            5.088440852298415,
+            0.29184035288220167
+          ],
+          "payload_path": "/World/RobotTasks/Payload_04_03",
+          "contact_check": {
+            "visible_gaps_m": [
+              6.280369834735101e-16,
+              4.440892098500626e-16
+            ],
+            "forces_N": [
+              12.059735298156738,
+              0.0
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              4.440892098500626e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06841647624969482,
+            "relative_drift_m": 1.0208828474262094e-06
+          },
+          "placement_error_m": 0.003003226194170112,
+          "final_position": [
+            -0.711663544178009,
+            5.0884809494018555,
+            0.288853257894516
+          ],
+          "support_gap_m": -0.0002376376503334665,
+          "final_speed_m_s": 0.0016237528761848807,
+          "still_stored": true
+        }
+      ]
+    },
+    {
+      "robot": "Robot_05",
+      "success": true,
+      "failure": null,
+      "travel_distance_m": 87.974,
+      "placements": [
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_00"
+          ],
+          "rack_path": "/Root/Shelf_2/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 2.3016409145882513,
+          "support_z": 0.20920510535419512,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_00",
+          "object_kind": "carton",
+          "expected_position": [
+            8.289226658836895,
+            2.3016409145882513,
+            0.35282513366898316
+          ],
+          "payload_path": "/World/RobotTasks/Payload_05_00",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              0.0
+            ],
+            "forces_N": [
+              1502.45849609375,
+              1218.152099609375
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06890468299388885,
+            "relative_drift_m": 1.871209538967818e-06
+          },
+          "placement_error_m": 0.0035115034749176963,
+          "final_position": [
+            8.288731575012207,
+            2.3016419410705566,
+            0.3493129312992096
+          ],
+          "support_gap_m": -0.0006849492569094839,
+          "final_speed_m_s": 0.0002828130091074854,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_01"
+          ],
+          "rack_path": "/Root/Shelf_2/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 2.690023436603916,
+          "support_z": 0.20925064330280352,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_01",
+          "object_kind": "carton",
+          "expected_position": [
+            8.289226658836895,
+            2.690023436603916,
+            0.35327648497903497
+          ],
+          "payload_path": "/World/RobotTasks/Payload_05_01",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              0.0
+            ],
+            "forces_N": [
+              1222.3348388671875,
+              948.8497924804688
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              0.0
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06882365047931671,
+            "relative_drift_m": 1.5656895697146214e-06
+          },
+          "placement_error_m": 0.0039173879465390655,
+          "final_position": [
+            8.288680076599121,
+            2.690025806427002,
+            0.34933391213417053
+          ],
+          "support_gap_m": -0.0007331133661221123,
+          "final_speed_m_s": 0.00021595200814772397,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_02"
+          ],
+          "rack_path": "/Root/Shelf_2/SM_PaletteA_12/SM_PaletteA_01",
+          "rack_slot_y": 1.8500234366039154,
+          "support_z": 0.20892430787265825,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_02",
+          "object_kind": "carton",
+          "expected_position": [
+            8.289226658836895,
+            1.8500234366039154,
+            0.352655656867627
+          ],
+          "payload_path": "/World/RobotTasks/Payload_05_02",
+          "contact_check": {
+            "visible_gaps_m": [
+              0.0,
+              8.881784197001252e-16
+            ],
+            "forces_N": [
+              1398.03955078125,
+              1045.5601806640625
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              0.0,
+              5.551115123125783e-17
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06887109577655792,
+            "relative_drift_m": 1.4620885426105836e-06
+          },
+          "placement_error_m": 0.0037650850715875792,
+          "final_position": [
+            8.288747787475586,
+            1.8500016927719116,
+            0.3489239811897278
+          ],
+          "support_gap_m": -0.0002520147303649023,
+          "final_speed_m_s": 0.00011295756848994642,
+          "still_stored": true
+        },
+        {
+          "source_props": [
+            "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_03"
+          ],
+          "rack_path": "/Root/Shelf_2/SM_PaletteA_357/SM_PaletteA_01",
+          "rack_slot_y": -2.8115589711228246,
+          "support_z": 0.20920511598656638,
+          "cleanup_object_id": "/World/DisasterAftermath/Props/Rear_Right_Carton_Mixed_03",
+          "object_kind": "carton",
+          "expected_position": [
+            8.264026659400162,
+            -2.8115589711228246,
+            0.35295467629611793
+          ],
+          "payload_path": "/World/RobotTasks/Payload_05_03",
+          "contact_check": {
+            "visible_gaps_m": [
+              5.551115123125783e-17,
+              8.881784197001252e-16
+            ],
+            "forces_N": [
+              1281.9417724609375,
+              1018.5108032226562
+            ],
+            "verified": true,
+            "attachment_gaps_m": [
+              8.881784197001252e-16,
+              8.881784197001252e-16
+            ]
+          },
+          "lift_check": {
+            "rise_m": 0.06883707642555237,
+            "relative_drift_m": 1.0086548102701327e-06
+          },
+          "placement_error_m": 0.003649214939932182,
+          "final_position": [
+            8.26346492767334,
+            -2.8115434646606445,
+            0.34931251406669617
+          ],
+          "support_gap_m": -0.0006850386803181618,
+          "final_speed_m_s": 0.00024899528943933547,
+          "still_stored": true
+        }
+      ]
+    }
+  ],
+  "limitations": "20 newly prepared small-prop tasks; mixed layout; original racks and five robots; session-only scene changes. This is a reduced assisted-grasp completion demo, not completion of the original 88-prop scene, not QMIX, and not an evaluation of the image classifier.",
+  "completed_task_families": {
+    "Rear-left carton": 4,
+    "Aisle rubble": 4,
+    "Screwdriver": 4,
+    "Rear beam": 4,
+    "Rear-right carton": 4
+  }
+}

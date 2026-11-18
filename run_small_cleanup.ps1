@@ -1,7 +1,7 @@
 param(
     [string]$IsaacRoot='F:\RSPE Project\isaac-sim-standalone-5.1.0-windows-x86_64',
     [ValidateSet(5,10,15,20)][int]$TaskCount=20,
-    [ValidateSet('grouped','pile','batched')][string]$Layout='grouped',
+    [ValidateSet('grouped','pile','batched','mixed')][string]$Layout='grouped',
     [switch]$Headless,
     [double]$Duration=0,
     [switch]$Restart,
@@ -32,7 +32,10 @@ if ($running -and $Restart) {
         }
     }
 }
-if ($Headless -and $Duration -eq 0) { $Duration=600 }
+$Layout=$Layout.ToLowerInvariant()
+if ($Headless -and $Duration -eq 0) {
+    if ($Layout -eq 'mixed') { $Duration=1200 } else { $Duration=600 }
+}
 $runArgs=@('isaac_sim/environment_small_tasks.py','--duration',"$Duration",'--small-task-count',"$TaskCount",'--small-layout',$Layout)
 if ($Headless) { $runArgs+='--headless' }
 if ($ExitOnComplete) { $runArgs+='--exit-on-complete' }

@@ -40,6 +40,13 @@ def test_empty_margin_exit_reserves_physical_base_and_still_blocks_peer_loads():
                               occupied_boxes=[(-1.1,-.1,-.9,.1)])
 
 
+def test_margin_exit_uses_peer_physical_bounds_instead_of_normal_planning_margin():
+    routes=RouteReservations()
+    path=[(0,0),(-1,0)]
+    assert not routes.reserve(1,path,.7,{2:((.99,1.03),.7)},footprint=(-.5,-.44,.5,.44))
+    assert routes.reserve(1,path,.7,{2:((.99,1.03),.5)},footprint=(-.5,-.44,.5,.44))
+
+
 def test_alternative_placement_centres_cover_support_without_overhang():
     positions=supported_centres((0.,0.),(1.,2.),(.2,.3),(.3,.4))
     assert positions[0]==(.3,.4)

@@ -26,7 +26,7 @@ def arguments():
     p.add_argument('--fast-cleanup',action='store_true',help='Claim the first feasible checked task instead of exhaustively ranking grasp candidates')
     p.add_argument('--small-demo',action='store_true',help='Separate small-prop scene; exclude original floor clutter before physics starts')
     p.add_argument('--small-task-count',type=int,choices=(5,10,15,20),default=20,help='Number of spaced boxes in the separate small demo')
-    p.add_argument('--small-layout',choices=('grouped','pile','batched'),default='grouped',help='All props visible in groups or one pile; batched is the earlier release policy')
+    p.add_argument('--small-layout',choices=('grouped','pile','batched','mixed'),default='grouped',help='All props visible in groups, mixed families or one pile; batched is the earlier release policy')
     p.add_argument('--efficientnet-model',type=Path,default=Path(__file__).resolve().parents[1]/'models/cdd/efficientnet_cdd.keras')
     p.add_argument('--classifier-python',default=sys.executable,help='Python environment containing TensorFlow')
     p.add_argument('--classifier-wsl',action='store_true')
@@ -157,8 +157,12 @@ def main():
 
         from warehouse_environment_jobs import existing_prop_jobs
         if args.small_demo:
-            from small_cleanup_scene import prepare_small_cleanup
-            environment_jobs=prepare_small_cleanup(stage,args.small_task_count,args.small_layout)
+            if args.small_layout=='mixed':
+                from mixed_cleanup_scene import prepare_mixed_cleanup
+                environment_jobs=prepare_mixed_cleanup(stage,args.small_task_count)
+            else:
+                from small_cleanup_scene import prepare_small_cleanup
+                environment_jobs=prepare_small_cleanup(stage,args.small_task_count,args.small_layout)
         else:
             environment_jobs=existing_prop_jobs(stage)
         from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred,idle_clear_due
@@ -167,12 +171,16 @@ def main():
         motion_stats={'peak_moving_robots':0,'overlap_frames':0}
         floor_prims=list(stage.GetPrimAtPath('/World/DisasterAftermath/Props').GetChildren())
         if args.small_demo:
-            floor_prims=[p for p in floor_prims if p.GetName().startswith('Debris_Demo_')]
+            floor_prims=[p for job in environment_jobs for group in job['candidates'] for p in group]
         cleanup_groups,unknown_components=floor_groups(floor_prims)
         cleanup=CleanupQueue(cleanup_groups,unknown_components) if args.tasks_per_robot==0 else None
         if args.small_demo and args.small_layout=='batched' and cleanup is not None:
             for index,key in enumerate(sorted(cleanup.items)):
                 if index>=5:cleanup.items[key]['state']='waiting'
+        if args.small_demo and args.small_layout=='mixed' and cleanup is not None and args.small_task_count>5:
+            first_round={str(job['candidates'][0][0].GetPath()) for job in environment_jobs}
+            for key,item in cleanup.items.items():
+                if key not in first_round:item['state']='waiting'
         cleanup_by_id={g['id']:g for g in cleanup_groups}
         cleanup_pallets=[]
         tasks = [job['task'] for job in environment_jobs]
@@ -209,12 +217,15 @@ def main():
         ui_cleanup_summary=None
         if not args.headless:
             import omni.ui as ui
-            title=('Carton tasks | five groups' if args.small_demo and args.small_layout=='grouped' else 'Existing warehouse object tasks')
+            title=('Mixed prop tasks | five families' if args.small_demo and args.small_layout=='mixed' else
+                   ('Carton tasks | five groups' if args.small_demo and args.small_layout=='grouped' else 'Existing warehouse object tasks'))
             task_window=ui.Window(title,width=700,height=370)
             with task_window.frame:
                 with ui.VStack(spacing=8):
                     ui_cleanup_summary=ui.Label('Continuous floor cleanup | verified grasp and rack placement' if cleanup is not None
                                                 else 'Existing props | contact-verified assisted grasp',height=25)
+                    if args.small_demo and args.small_layout=='mixed':
+                        ui_cleanup_summary.text='All %d mixed props visible | one parallel task per family | queued props stay on the floor'%args.small_task_count
                     for r in records:
                         ui_labels[r['id']]=ui.Label('Robot %02d | %s | waiting'%(r['id'],r['task']),height=52,word_wrap=True)
             viewport_ui=ui.Workspace.get_window('Viewport')
@@ -465,7 +476,8 @@ def main():
             r['nav_active']=False
             original_state=r['state']
             waiting=False
-            for attempt in range(240 if r.get('carrying') else 48):
+            reserve_attempts=(1200 if args.small_demo and args.small_layout=='mixed' else 240) if r.get('carrying') else 48
+            for attempt in range(reserve_attempts):
                 positions={other['id']:(pose(other['base'])[0][:2],.70) for other in records}
                 occupied=[]
                 for other in records:
@@ -532,12 +544,14 @@ def main():
                 yield from navigate_unreserved(r,goal,yaw)
                 return
             try:
-                if not planner(r).free(pose(r['base'])[0][:2]) and not r.get('carrying'):
+                if not planner(r).free(pose(r['base'])[0][:2]) and (not r.get('carrying') or
+                        (args.small_demo and args.small_layout=='mixed')):
                     yield from escape_static_margin(r)
                 yield from clear_initial_traffic_margin(r)
                 for leg in range(1000):
                     route=None
-                    for attempt in range(40):
+                    plan_attempts=240 if args.small_demo and args.small_layout=='mixed' and r.get('carrying') else 40
+                    for attempt in range(plan_attempts):
                         try:
                             route=planner(r).plan(pose(r['base'])[0][:2],goal)
                             break
@@ -570,12 +584,25 @@ def main():
             if nav.free(start):return
             # Actual rotated base half-extents plus 2 cm, rather than the
             # conservative 64 cm planning inflation. Object geometry remains.
-            c,s=abs(math.cos(r['yaw'])),abs(math.sin(r['yaw']))
+            q=pose(r['base'])[1]
+            actual_yaw=math.atan2(2*(q[0]*q[3]+q[1]*q[2]),1-2*(q[2]*q[2]+q[3]*q[3]))
+            r['yaw']=actual_yaw
+            c,s=abs(math.cos(actual_yaw)),abs(math.sin(actual_yaw))
             hx,hy=.48*c+.42*s+.02,.48*s+.42*c+.02
+            if r.get('carrying') and r.get('item'):
+                clo,chi=bounds([r['item']])
+                hx=max(hx,abs(float(clo[0]-start[0]))+.02,abs(float(chi[0]-start[0]))+.02)
+                hy=max(hy,abs(float(clo[1]-start[1]))+.02,abs(float(chi[1]-start[1]))+.02)
             physical=FloorPlanner([(lo[0]-hx,hi[0]+hx,lo[1]-hy,hi[1]+hy) for lo,hi in obstacles(r)],radius=0.)
             if not physical.free(start):
                 raise TrafficDeferred('Base is inside physical obstacle clearance; automatic escape refused')
-            positions={other['id']:(pose(other['base'])[0][:2],.70) for other in records}
+            positions={}
+            for other in records:
+                op,oq=pose(other['base'])
+                oy=math.atan2(2*(oq[0]*oq[3]+oq[1]*oq[2]),1-2*(oq[2]*oq[2]+oq[3]*oq[3]))
+                oc,os=abs(math.cos(oy)),abs(math.sin(oy))
+                peer_half=max(.48*oc+.42*os,.48*os+.42*oc)+.02
+                positions[other['id']]=(op[:2],peer_half)
             escape_attempts=0
             for distance in np.arange(.10,1.61,.10):
                 for angle in np.linspace(0,2*math.pi,24,endpoint=False):
@@ -771,13 +798,17 @@ def main():
                 half=float(UsdGeom.Cube(primary).GetSizeAttr().Get())/2
                 face,sign,axes=upper_face([tuple(transform.TransformDir(Gf.Vec3d(*(1. if i==j else 0. for j in range(3))))) for i in range(3)])
                 approaches=[]
+                yaw_options=(0.,math.pi,math.pi/2,-math.pi/2)
+                if args.small_demo and args.small_layout=='mixed':
+                    from mixed_cleanup_scene import mixed_pickup_yaws
+                    yaw_options=mixed_pickup_yaws(r['candidate_kind'])
                 for u in (0.,-.30,.30,-.45,.45):
                     for v in (0.,-.30,.30,-.45,.45):
                         local=[0.,0.,0.]
                         local[face]=sign*half
                         local[axes[0]],local[axes[1]]=u*2*half,v*2*half
                         top=np.array(transform.Transform(Gf.Vec3d(*local)))
-                        for yaw in (0.,math.pi,math.pi/2,-math.pi/2):
+                        for yaw in yaw_options:
                             direction=np.array([math.cos(yaw),math.sin(yaw)])
                             point=top+np.array([0,0,.013])
                             for stand_off in (.90,.75,1.05):
@@ -958,6 +989,12 @@ def main():
                          4:('/Root/Shelf_2/SM_PaletteA_5/SM_PaletteA_01',0.),
                          5:('/Root/Shelf_0/SM_PaletteA_319/SM_PaletteA_01',math.pi)}
 
+        def reserve_rack_footprint(box):
+            if args.small_demo and args.small_layout=='mixed':
+                from mixed_cleanup_scene import mixed_rack_footprint
+                return mixed_rack_footprint(box)
+            return box
+
         def rack_ik_available(r,grip,source_yaw,source_lo,source_hi):
             """A task is available only if its original prop can also be placed."""
             if cleanup is not None:
@@ -970,6 +1007,9 @@ def main():
                     path=pallet['path']
                     shelf_lo,shelf_hi=bounds([stage.GetPrimAtPath(path.split('/SM_')[0])])
                     yaws=(math.pi,) if '/Shelf_0/' in path else ((0.,) if '/Shelf_2/' in path else (0.,math.pi))
+                    if args.small_demo and args.small_layout=='mixed':
+                        from mixed_cleanup_scene import mixed_rack_yaws
+                        yaws=mixed_rack_yaws(yaws,float(source_center[0]),float(shelf_lo[0]),float(shelf_hi[0]))
                     for yaw in yaws:
                         angle=yaw-source_yaw
                         rotation=np.array([[math.cos(angle),-math.sin(angle),0],
@@ -986,7 +1026,7 @@ def main():
                         edge=shelf_hi[0] if yaw==math.pi else shelf_lo[0]
                         support_edge=phi[0] if yaw==math.pi else plo[0]
                         cx=support_edge-toward[0]*.015+toward[0]*projected[0]
-                        if r.get('candidate_kind')=='beam':cx=(plo[0]+phi[0])/2+.15
+                        if r.get('candidate_kind')=='beam' and not (args.small_demo and args.small_layout=='mixed'):cx=(plo[0]+phi[0])/2+.15
                         if not plo[0]-.015<=cx<=phi[0]+.015:continue
                         xs=[float(cx)]
                         if r.get('candidate_kind')!='beam':
@@ -999,6 +1039,7 @@ def main():
                                 yield
                                 if cleanup.items[r['candidate_object_id']]['state']!='pending':return False
                             box=(float(cx-projected[0]),float(y-projected[1]),float(cx+projected[0]),float(y+projected[1]))
+                            box=reserve_rack_footprint(box)
                             if not cleanup.slot_free(box):continue
                             dock=np.array([edge-toward[0]*.70,y])
                             if not r['selection_nav'].free(dock):continue
@@ -1096,6 +1137,7 @@ def main():
                         if not (pallet_lo[0]+.005<=cx<=pallet_hi[0]-.005 and pallet_lo[1]+.005<=cy<=pallet_hi[1]-.005):continue
                         shift=np.array([cx-box_center[0],cy-box_center[1],0.])
                         box=(float(body_lo[0]+shift[0]),float(body_lo[1]+shift[1]),float(body_hi[0]+shift[0]),float(body_hi[1]+shift[1]))
+                        box=reserve_rack_footprint(box)
                         slot=dict(original,centre_x=float(cx),y=float(cy),box=box)
                         if not cleanup.can_retarget(r['cleanup_id'],slot):continue
                         hit=omni.physx.get_physx_scene_query_interface().raycast_closest((float(cx),float(cy),float(pallet_hi[2]+.15)),(0.,0.,-1.),.6)
@@ -1131,6 +1173,7 @@ def main():
                                 yield
                                 shift=np.array([cx-box_center[0],cy-box_center[1],0.])
                                 box=(float(body_lo[0]+shift[0]),float(body_lo[1]+shift[1]),float(body_hi[0]+shift[0]),float(body_hi[1]+shift[1]))
+                                box=reserve_rack_footprint(box)
                                 slot=dict(original,path=path,centre_x=float(cx),y=float(cy),box=box)
                                 if not cleanup.can_retarget(r['cleanup_id'],slot):continue
                                 hit=omni.physx.get_physx_scene_query_interface().raycast_closest((float(cx),float(cy),float(phi[2]+.15)),(0.,0.,-1.),.6)
@@ -1190,7 +1233,7 @@ def main():
                     r['selected_props']=[]
                 event(r,'reserve_existing_environment_object')
                 available=available_cleanup(r) if cleanup is not None else []
-                if cleanup is not None and (not args.fast_cleanup or (args.small_demo and args.small_layout=='grouped')):
+                if cleanup is not None and (not args.fast_cleanup or (args.small_demo and args.small_layout in ('grouped','mixed'))):
                     own={str(group[0].GetPath()) for group in candidate_groups[r['id']]}
                     preferred=[key for key in available if key in own]
                     available=preferred or available
@@ -1621,7 +1664,7 @@ def main():
                     retreat=current[:2]-.35*np.array([math.cos(r['yaw']),math.sin(r['yaw'])])
                     yield from navigate(r,retreat)
                     r.update(item=None,originals=[],carrying=False,destination_shelf=None)
-                    if not args.fast_cleanup or (args.small_demo and args.small_layout=='batched' and args.small_task_count>5):
+                    if not args.fast_cleanup or (args.small_demo and args.small_layout in ('batched','mixed') and args.small_task_count>5):
                         event(r,'return_to_clear_front_apron')
                         yield from navigate(r,r['home'][:2],yaw=0.)
                 except Exception as exc:
@@ -1654,17 +1697,25 @@ def main():
         camera_unchanged=True
         cleanup_stop_reason=None
         while workers and clock[0]/60 < args.duration and app.is_running():
-            if args.small_demo and args.small_layout=='batched' and cleanup is not None:
-                wave=[key for key,item in sorted(cleanup.items.items()) if item['state']=='waiting'][:5]
+            if args.small_demo and args.small_layout in ('batched','mixed') and cleanup is not None:
+                if args.small_layout=='mixed':
+                    wave=[]
+                    for job in environment_jobs:
+                        queued=[str(group[0].GetPath()) for group in job['candidates']
+                                if cleanup.items[str(group[0].GetPath())]['state']=='waiting']
+                        if queued:wave.append(queued[0])
+                else:
+                    wave=[key for key,item in sorted(cleanup.items.items()) if item['state']=='waiting'][:5]
                 if wave and not any(item['state'] in ('pending','assigned') for item in cleanup.items.values()) and all(
                         not r.get('carrying') and r.get('item') is None and not r.get('nav_active')
                         and float(np.linalg.norm(pose(r['base'])[0][:2]-r['home'][:2]))<.35 for r in selected):
-                    from small_cleanup_scene import activate_small_wave
-                    activate_small_wave(stage,wave)
+                    if args.small_layout=='batched':
+                        from small_cleanup_scene import activate_small_wave
+                        activate_small_wave(stage,wave)
                     for key in wave:cleanup.items[key]['state']='pending'
                     cleanup.epoch+=1
                     pose_cache.clear();bounds_cache.clear()
-                    print('ACTIVATE NEXT FIVE TASKS',wave,flush=True)
+                    print('DISPATCH NEXT MIXED ROUND' if args.small_layout=='mixed' else 'ACTIVATE NEXT FIVE TASKS',wave,flush=True)
                     tick()
             for robot_id,worker in sorted(list(workers.items()),key=lambda pair:-research.priority(pair[0])):
                 try:
@@ -1697,7 +1748,8 @@ def main():
                         active=(','.join('%02d'%rid for rid in route_reservations.routes) or 'manipulating / waiting') if concurrent_cleanup else ('Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting')
                         manipulating=','.join('%02d'%r['id'] for r in selected if r.get('carrying') or r['state'] in (
                             'align_existing_gripper_to_surface','surface_contact_verified','contact_verified_assisted_grasp','place_on_existing_rack_pallet','release_on_rack')) or '-'
-                        ui_cleanup_summary.text='Stored %d/%d | routes: %s | handling: %s | pending %d | waiting %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,manipulating,state['counts']['pending'],state['counts']['waiting'],state['counts']['blocked'],state['counts']['failed'])
+                        queue_label='queued' if args.small_demo and args.small_layout=='mixed' else 'waiting'
+                        ui_cleanup_summary.text='Stored %d/%d | routes: %s | handling: %s | pending %d | %s %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,manipulating,state['counts']['pending'],queue_label,state['counts']['waiting'],state['counts']['blocked'],state['counts']['failed'])
                     if clock[0]%300==0:
                         args.report.parent.mkdir(parents=True,exist_ok=True)
                         args.report.with_suffix('.cleanup.json').write_text(json.dumps(dict(state,simulation_time=clock[0]/60,
@@ -1741,7 +1793,7 @@ def main():
                         cleanup.items[job['cleanup_object_id']].update(state='failed',reason=r['failure'])
 
         report=dict(scene=str(args.scene.resolve()),mode='mobile planar-drive physics; assisted grasp',
-                    scenario='%d small isolated boxes'%args.small_task_count if args.small_demo else 'original disaster floor props',
+                    scenario=(('%d mixed disaster-prop tasks' if args.small_layout=='mixed' else '%d small isolated boxes')%args.small_task_count) if args.small_demo else 'original disaster floor props',
                     small_layout=args.small_layout if args.small_demo else None,
                     reserved_original_paths=sorted(reserved),requested_max_tasks_per_robot=args.tasks_per_robot,
                     simulated_seconds=round(clock[0]/60,3),camera='fixed 28 mm perspective',camera_unchanged=bool(camera_unchanged),

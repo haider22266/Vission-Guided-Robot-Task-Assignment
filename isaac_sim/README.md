@@ -1,3 +1,11 @@
+For all five requested prop families together (20 tasks, four per family):
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout mixed -Restart
+```
+
+See [MIXED_CLEANUP.md](../MIXED_CLEANUP.md).
+
 For all 20 cartons visible together in five groups of four, with verified 20/20 completion:
 
 ```powershell

@@ -1,5 +1,17 @@
 # Disaster-response robotics with CDD and Isaac Sim 5.1
 
+For **rear-left cartons, aisle rubble, screwdrivers, short rear beams and
+rear-right cartons together** (four tasks of each type):
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout mixed -Restart
+```
+
+The mixed layout verified 20/20 stored props in 478.5 simulated seconds,
+four per robot, with all five robots moving concurrently at peak. All props
+are visible from startup; assignments are coordinated one per family per
+round. See [MIXED_CLEANUP.md](MIXED_CLEANUP.md) for scope and prop sizes.
+
 For the **20-task small-box completion demo**:
 
 ```powershell
