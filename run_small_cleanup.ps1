@@ -1,5 +1,6 @@
 param(
     [string]$IsaacRoot='F:\RSPE Project\isaac-sim-standalone-5.1.0-windows-x86_64',
+    [ValidateSet(5,10,15,20)][int]$TaskCount=20,
     [switch]$Headless,
     [double]$Duration=0,
     [switch]$ExitOnComplete
@@ -13,7 +14,7 @@ $running=Get-CimInstance Win32_Process -Filter "Name='kit.exe'" | Where-Object {
 }
 if ($running) { throw 'Close the existing warehouse simulation before starting the small-task version.' }
 if ($Headless -and $Duration -eq 0) { $Duration=600 }
-$runArgs=@('isaac_sim/environment_small_tasks.py','--duration',"$Duration")
+$runArgs=@('isaac_sim/environment_small_tasks.py','--duration',"$Duration",'--small-task-count',"$TaskCount")
 if ($Headless) { $runArgs+='--headless' }
 if ($ExitOnComplete) { $runArgs+='--exit-on-complete' }
 & $runner @runArgs

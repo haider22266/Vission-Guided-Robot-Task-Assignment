@@ -29,6 +29,17 @@ def test_margin_escape_distinguishes_planning_inflation_from_physical_collision(
     assert not physical.free((1.4,.5))
 
 
+def test_empty_margin_exit_reserves_physical_base_and_still_blocks_peer_loads():
+    routes=RouteReservations()
+    peers={2:((1.31,.82),.7)}
+    path=[(0,0),(-1,0)]
+    assert not routes.reserve(1,path,.7,peers,footprint=(-.7,-.7,.7,.7))
+    assert routes.reserve(1,path,.7,peers,footprint=(-.5,-.44,.5,.44))
+    routes.release(1)
+    assert not routes.reserve(1,path,.7,peers,footprint=(-.5,-.44,.5,.44),
+                              occupied_boxes=[(-1.1,-.1,-.9,.1)])
+
+
 def test_alternative_placement_centres_cover_support_without_overhang():
     positions=supported_centres((0.,0.),(1.,2.),(.2,.3),(.3,.4))
     assert positions[0]==(.3,.4)
@@ -89,6 +100,15 @@ def test_peer_motion_retries_access_rejections_without_stealing_leases():
     queue.claim('a',2,{'box':(0,0,1,1),'path':'rack'})
     assert queue.retry_after_traffic(1)==0
     assert queue.items['a']['robot']==2 and len(queue.slots)==1
+
+
+def test_waiting_wave_is_not_assignable_or_counted_as_complete():
+    queue=CleanupQueue(groups())
+    queue.items['b']['state']='waiting'
+    assert queue.available(1)==['a']
+    assert queue.summary()['counts']['waiting']==1
+    assert not queue.summary()['floor_clean']
+    with pytest.raises(ValueError):queue.claim('b',1,{'box':(0,0,1,1),'path':'rack'})
 
 
 def test_unrecoverable_released_load_does_not_retire_clear_worker_or_fake_success():

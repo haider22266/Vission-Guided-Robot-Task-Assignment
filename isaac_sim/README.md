@@ -1,7 +1,7 @@
-For the reduced version with five small boxes and verified 5/5 task completion:
+For the reduced version with 20 small-box tasks in four batches and verified 20/20 completion:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20
 ```
 
 Run from the workspace root. See [SMALL_CLEANUP.md](../SMALL_CLEANUP.md).

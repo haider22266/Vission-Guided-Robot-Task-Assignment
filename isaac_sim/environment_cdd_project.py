@@ -24,7 +24,8 @@ def arguments():
     p.add_argument('--scene', type=Path, default=SOURCE_DIR/'warehouse_verified.usd')
     p.add_argument('--perception-backend',choices=('off','mock','efficientnet'),default='off')
     p.add_argument('--fast-cleanup',action='store_true',help='Claim the first feasible checked task instead of exhaustively ranking grasp candidates')
-    p.add_argument('--small-demo',action='store_true',help='Separate five-small-prop scene; exclude original floor clutter before physics starts')
+    p.add_argument('--small-demo',action='store_true',help='Separate small-prop scene; exclude original floor clutter before physics starts')
+    p.add_argument('--small-task-count',type=int,choices=(5,10,15,20),default=20,help='Number of spaced boxes in the separate small demo')
     p.add_argument('--efficientnet-model',type=Path,default=Path(__file__).resolve().parents[1]/'models/cdd/efficientnet_cdd.keras')
     p.add_argument('--classifier-python',default=sys.executable,help='Python environment containing TensorFlow')
     p.add_argument('--classifier-wsl',action='store_true')
@@ -153,7 +154,7 @@ def main():
         from warehouse_environment_jobs import existing_prop_jobs
         if args.small_demo:
             from small_cleanup_scene import prepare_small_cleanup
-            environment_jobs=prepare_small_cleanup(stage)
+            environment_jobs=prepare_small_cleanup(stage,args.small_task_count)
         else:
             environment_jobs=existing_prop_jobs(stage)
         from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred,idle_clear_due
@@ -165,6 +166,9 @@ def main():
             floor_prims=[p for p in floor_prims if p.GetName().startswith('Debris_Demo_')]
         cleanup_groups,unknown_components=floor_groups(floor_prims)
         cleanup=CleanupQueue(cleanup_groups,unknown_components) if args.tasks_per_robot==0 else None
+        if args.small_demo and cleanup is not None:
+            for index,key in enumerate(sorted(cleanup.items)):
+                if index>=5:cleanup.items[key]['state']='waiting'
         cleanup_by_id={g['id']:g for g in cleanup_groups}
         cleanup_pallets=[]
         tasks = [job['task'] for job in environment_jobs]
@@ -573,8 +577,13 @@ def main():
                     start=pose(r['base'])[0][:2].copy()
                     goal=start+distance*np.array([math.cos(angle),math.sin(angle)])
                     if not nav.free(goal) or not physical.clear(start,goal):continue
+                    occupied=[]
+                    for other in records:
+                        if other is not r and other.get('carrying') and other.get('item'):
+                            olo,ohi=bounds([other['item']])
+                            occupied.append((float(olo[0]-.06),float(olo[1]-.06),float(ohi[0]+.06),float(ohi[1]+.06)))
                     if not route_reservations.reserve(r['id'],[start,goal],navigation_radius(r),positions,
-                            clock[0]/60,footprint=navigation_footprint(r)):continue
+                            clock[0]/60,footprint=(-hx,-hy,hx,hy),occupied_boxes=occupied):continue
                     escape_attempts+=1
                     event(r,'exit_inflated_margin_with_physical_clearance')
                     r['nav_active']=True
@@ -1606,7 +1615,7 @@ def main():
                     retreat=current[:2]-.35*np.array([math.cos(r['yaw']),math.sin(r['yaw'])])
                     yield from navigate(r,retreat)
                     r.update(item=None,originals=[],carrying=False,destination_shelf=None)
-                    if not args.fast_cleanup:
+                    if not args.fast_cleanup or (args.small_demo and args.small_task_count>5):
                         event(r,'return_to_clear_front_apron')
                         yield from navigate(r,r['home'][:2],yaw=0.)
                 except Exception as exc:
@@ -1639,6 +1648,18 @@ def main():
         camera_unchanged=True
         cleanup_stop_reason=None
         while workers and clock[0]/60 < args.duration and app.is_running():
+            if args.small_demo and cleanup is not None:
+                wave=[key for key,item in sorted(cleanup.items.items()) if item['state']=='waiting'][:5]
+                if wave and not any(item['state'] in ('pending','assigned') for item in cleanup.items.values()) and all(
+                        not r.get('carrying') and r.get('item') is None and not r.get('nav_active')
+                        and float(np.linalg.norm(pose(r['base'])[0][:2]-r['home'][:2]))<.35 for r in selected):
+                    from small_cleanup_scene import activate_small_wave
+                    activate_small_wave(stage,wave)
+                    for key in wave:cleanup.items[key]['state']='pending'
+                    cleanup.epoch+=1
+                    pose_cache.clear();bounds_cache.clear()
+                    print('ACTIVATE NEXT FIVE TASKS',wave,flush=True)
+                    tick()
             for robot_id,worker in sorted(list(workers.items()),key=lambda pair:-research.priority(pair[0])):
                 try:
                     next(worker)
@@ -1647,7 +1668,7 @@ def main():
             if cleanup is not None and workers and all(r.get('cleanup_waiting',False) for r in selected if r['id'] in workers):
                 # Exhausting a robot's preferred family does not mean the
                 # shared pool is exhausted. Let its next turn try other kinds.
-                if not any(item['state']=='assigned' for item in cleanup.items.values()) and not any(
+                if not any(item['state'] in ('assigned','waiting') for item in cleanup.items.values()) and not any(
                         available_cleanup(r) or needs_idle_clear(r) for r in selected if r['id'] in workers):
                     cleanup_stop_reason='No currently feasible pickup and free rack slot; remaining objects are not clean'
                     break
@@ -1670,7 +1691,7 @@ def main():
                         active=(','.join('%02d'%rid for rid in route_reservations.routes) or 'manipulating / waiting') if concurrent_cleanup else ('Robot %02d'%cleanup_transit.owner if cleanup_transit.owner else 'waiting')
                         manipulating=','.join('%02d'%r['id'] for r in selected if r.get('carrying') or r['state'] in (
                             'align_existing_gripper_to_surface','surface_contact_verified','contact_verified_assisted_grasp','place_on_existing_rack_pallet','release_on_rack')) or '-'
-                        ui_cleanup_summary.text='Stored %d/%d | routes: %s | handling: %s | pending %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,manipulating,state['counts']['pending'],state['counts']['blocked'],state['counts']['failed'])
+                        ui_cleanup_summary.text='Stored %d/%d | routes: %s | handling: %s | pending %d | waiting %d | blocked %d | failed %d'%(state['counts']['stored'],state['total_objects'],active,manipulating,state['counts']['pending'],state['counts']['waiting'],state['counts']['blocked'],state['counts']['failed'])
                     if clock[0]%300==0:
                         args.report.parent.mkdir(parents=True,exist_ok=True)
                         args.report.with_suffix('.cleanup.json').write_text(json.dumps(dict(state,simulation_time=clock[0]/60,
@@ -1714,7 +1735,7 @@ def main():
                         cleanup.items[job['cleanup_object_id']].update(state='failed',reason=r['failure'])
 
         report=dict(scene=str(args.scene.resolve()),mode='mobile planar-drive physics; assisted grasp',
-                    scenario='five small isolated boxes' if args.small_demo else 'original disaster floor props',
+                    scenario='%d small isolated boxes'%args.small_task_count if args.small_demo else 'original disaster floor props',
                     reserved_original_paths=sorted(reserved),requested_max_tasks_per_robot=args.tasks_per_robot,
                     simulated_seconds=round(clock[0]/60,3),camera='fixed 28 mm perspective',camera_unchanged=bool(camera_unchanged),
                     execution='concurrent shared physics frames',robots=[])

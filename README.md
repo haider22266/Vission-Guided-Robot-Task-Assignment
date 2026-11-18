@@ -1,13 +1,14 @@
 # Disaster-response robotics with CDD and Isaac Sim 5.1
 
-For the new **five-small-box completion demo**:
+For the **20-task small-box completion demo**:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20
 ```
 
-This reduced scene verified 5/5 stored boxes in 60.267 simulated seconds,
-with all five robots moving concurrently at peak. See [SMALL_CLEANUP.md](SMALL_CLEANUP.md)
+This reduced scene verified 20/20 stored boxes in 473.017 simulated seconds,
+released in four batches of five, with all five robots moving concurrently at
+peak. Use `-TaskCount 5` for the earlier five-box version. See [SMALL_CLEANUP.md](SMALL_CLEANUP.md)
 for its scope and measured results. It does not establish completion of the
 original dense 88-prop scene described below.
 

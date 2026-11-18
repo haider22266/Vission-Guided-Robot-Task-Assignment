@@ -1,4 +1,4 @@
-"""Run five small, separated box-to-rack tasks in the existing warehouse."""
+"""Run 5–20 small, separated box-to-rack tasks with five warehouse robots."""
 import sys
 from pathlib import Path
 from environment_cdd_project import main

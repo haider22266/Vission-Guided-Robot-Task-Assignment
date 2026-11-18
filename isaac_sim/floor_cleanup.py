@@ -204,7 +204,7 @@ class CleanupQueue:
 
     def summary(self):
         counts={state:sum(item['state']==state for item in self.items.values())
-                for state in ('pending','assigned','stored','blocked','failed')}
+                for state in ('pending','assigned','stored','blocked','failed','waiting')}
         return {'mode':'continuous shared floor cleanup','floor_clean':all(item['state']=='stored' for item in self.items.values()) and not self.unknown,
                 'counts':counts,'total_objects':len(self.items),'unregistered_components':self.unknown,
                 'remaining_objects':[item for item in self.items.values() if item['state']!='stored'],
