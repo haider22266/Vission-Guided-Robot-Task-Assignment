@@ -59,7 +59,10 @@ def main():
     args = arguments()
     sys.stdout.reconfigure(line_buffering=True)
     from isaacsim import SimulationApp
-    app = SimulationApp({'headless': args.headless, 'width': 1600, 'height': 900})
+    app_config={'headless': args.headless, 'width': 1600, 'height': 900}
+    if args.small_demo:
+        app_config.update(limit_cpu_threads=8,width=1280,height=720)
+    app = SimulationApp(app_config)
     research=None
     fault_injection={'used':False}
     try:

@@ -50,6 +50,9 @@ See [reports/small_cleanup_validation.json](reports/small_cleanup_validation.jso
 These five-box results apply to `-TaskCount 5`, not the 20-box version or the
 original 88 props.
 GUI wall-clock duration can differ from the headless test.
+The small-demo launcher caps Isaac's CPU worker pool at eight threads and uses
+a 1280×720 starting window, following a GUI LLVM out-of-memory failure on this
+machine. The larger-scene application's defaults are unchanged.
 
 For a bounded automated run:
 
