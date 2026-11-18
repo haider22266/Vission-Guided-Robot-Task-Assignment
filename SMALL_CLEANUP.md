@@ -1,7 +1,32 @@
-Run the small-prop version with 20 tasks from the workspace root:
+To show all 20 cartons together from the start, run:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout grouped
+```
+
+This is the default layout: five visible groups of four brown cartons with
+tape bands, rather than staged task releases. All 20 are immediately pending,
+visible and colliding. No later batches are introduced. Use `-Layout pile`
+for one shared group. The groups have 0.90 m centre spacing and 24 cm cartons;
+their gaps provide approach options without overlapping source geometry.
+The grouped layout completed a headless Isaac Sim 5.1 test in 556.217 simulated
+seconds: 20 stored, zero pending, assigned, waiting, blocked or failed. All 20
+remained on their racks at the final recheck. Peak simultaneously moving robots
+was five, with 21,192 overlapping-motion frames. Task counts per robot were
+6, 4, 3, 2 and 5 because reassignment can cross groups. See
+[reports/grouped_cleanup_20_validation.json](reports/grouped_cleanup_20_validation.json).
+This is one measured grouped-layout run, not a validation of the optional
+single-pile layout or the original dense 88-prop scene. All 95 logic tests pass.
+Each robot first considers its nearby group, then other available tasks if
+its own group is infeasible or already assigned. Exclusive reservations still
+prevent duplicate work. Traffic-only floor recoveries do not count against the
+three-attempt manipulation-failure limit; verified grasp/settling and safe
+recovery requirements are unchanged.
+
+For the previously validated batched version, run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout batched
 ```
 
 Close any other warehouse simulation first. This opens the existing warehouse,
@@ -10,7 +35,7 @@ released in four batches of five 24 cm boxes. Each robot can claim a box, approa
 lift, carry to a nearby feasible rack, release and verify support. Reservations
 prevent duplicate assignments. Robot cameras are off and the viewport stays
 fixed. The GUI stays open with `FLOOR CLEAN` after all tasks finish. The default
-is 20 tasks, with only five boxes on the floor at a time; `-TaskCount 5` reproduces the original
+for this batched option is 20 tasks, with only five boxes on the floor at a time; `-TaskCount 5 -Layout batched` reproduces the original
 five-box demo. Counts 10 and 15 are also available. The robots draw from a
 shared exclusive queue, so each can collect multiple boxes. Future batches
 remain hidden and non-colliding in `waiting` state until the preceding batch
@@ -38,7 +63,7 @@ Peak simultaneously moving robots: five; 13,440 physics frames had overlapping
 motion. See [reports/small_cleanup_20_validation.json](reports/small_cleanup_20_validation.json).
 The small-demo traffic escape uses the physical base footprint plus clearance
 when leaving inflated planning margins, with peer-load obstacles retained.
-All 92 automated tests pass. These results apply to four batches of five, not
+These results apply to four batches of five, not
 20 simultaneous floor props or the original 88-prop scene.
 
 The earlier five-task validation completed all five tasks in 60.267

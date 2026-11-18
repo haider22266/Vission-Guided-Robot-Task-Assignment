@@ -111,6 +111,22 @@ def test_waiting_wave_is_not_assignable_or_counted_as_complete():
     with pytest.raises(ValueError):queue.claim('b',1,{'box':(0,0,1,1),'path':'rack'})
 
 
+def test_traffic_recovery_does_not_consume_manipulation_failure_limit():
+    queue=CleanupQueue(groups())
+    for _ in range(4):
+        queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})
+        queue.fail('a','Traffic deferred while carrying')
+        queue.recovered('a',0.,.001,True,traffic_only=True)
+        assert queue.items['a']['state']=='pending'
+    assert queue.items['a']['traffic_recoveries']==4
+    for _ in range(3):
+        queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})
+        queue.fail('a','Actual manipulation failure')
+        queue.recovered('a',0.,.001,True)
+    assert queue.items['a']['state']=='blocked'
+    assert queue.items['a']['manipulation_recoveries']==3
+
+
 def test_unrecoverable_released_load_does_not_retire_clear_worker_or_fake_success():
     queue=CleanupQueue(groups())
     queue.claim('a',1,{'box':(0,0,1,1),'path':'rack'})

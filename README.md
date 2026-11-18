@@ -3,14 +3,19 @@
 For the **20-task small-box completion demo**:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout grouped
 ```
 
-This reduced scene verified 20/20 stored boxes in 473.017 simulated seconds,
-released in four batches of five, with all five robots moving concurrently at
-peak. Use `-TaskCount 5` for the earlier five-box version. See [SMALL_CLEANUP.md](SMALL_CLEANUP.md)
+This reduced scene shows all 20 cartons from startup in five groups of four.
+It verified 20/20 stored boxes in 556.217 simulated seconds, with all five
+robots moving concurrently at peak. Use `-Layout batched` for the earlier
+four-batch version, or `-TaskCount 5 -Layout batched` for the five-box version.
+See [SMALL_CLEANUP.md](SMALL_CLEANUP.md)
 for its scope and measured results. It does not establish completion of the
 original dense 88-prop scene described below.
+
+The optional `-Layout pile` places all 20 in one shared group, but its
+completion has not been validated.
 
 Five Ridgeback–Franka robots operate in an existing warehouse with props and
 racks. Mounted RGB cameras send live images to a separately running EfficientNetB0

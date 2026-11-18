@@ -163,7 +163,7 @@ class CleanupQueue:
             self.epoch+=1
         item['reason']=reason
 
-    def recovered(self,key,pose_error,speed,on_floor):
+    def recovered(self,key,pose_error,speed,on_floor,traffic_only=False):
         """Requeue only after a physical release/settle and exact geometry handoff."""
         item=self.items[key]
         if item['state']!='failed' or not on_floor or not all(math.isfinite(v) for v in (pose_error,speed)) or pose_error>.002 or speed>.05:
@@ -171,12 +171,16 @@ class CleanupQueue:
         self.slots.pop(item.get('lease'),None)
         item.pop('lease',None)
         item['recoveries']=item.get('recoveries',0)+1
+        if not traffic_only:item['manipulation_recoveries']=item.get('manipulation_recoveries',0)+1
+        else:item['traffic_recoveries']=item.get('traffic_recoveries',0)+1
         self.epoch+=1
         item['attempts'][item['robot']]=self.epoch
         item['avoid_robot']=item['robot']
         item['avoid_until_epoch']=self.epoch+1
-        item.update(state='pending' if item['recoveries']<3 else 'blocked',robot=None,
-                    reason='Recovered physically to floor; retry with another grasp/robot' if item['recoveries']<3 else 'Repeated manipulation failures; needs operator review')
+        blocked=item.get('manipulation_recoveries',0)>=3
+        item.update(state='blocked' if blocked else 'pending',robot=None,
+                    reason='Repeated manipulation failures; needs operator review' if blocked else
+                    ('Recovered after traffic conflict; available for reassignment' if traffic_only else 'Recovered physically to floor; retry with another grasp/robot'))
 
     def recovered_storage(self,key,contact_verified,support_gap,speed,box):
         item=self.items[key]

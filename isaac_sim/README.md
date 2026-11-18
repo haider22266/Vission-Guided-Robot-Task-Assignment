@@ -1,10 +1,12 @@
-For the reduced version with 20 small-box tasks in four batches and verified 20/20 completion:
+For all 20 cartons visible together in five groups of four, with verified 20/20 completion:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20
+powershell.exe -ExecutionPolicy Bypass -File .\run_small_cleanup.ps1 -TaskCount 20 -Layout grouped
 ```
 
 Run from the workspace root. See [SMALL_CLEANUP.md](../SMALL_CLEANUP.md).
+Use `-Layout batched` for the earlier four-batch version. The optional
+`-Layout pile` creates one shared group; its completion is unverified.
 
 For the larger environment with optional CDD classifier, robot camera feeds, task visualization and
 continuous warehouse cleanup, run from the workspace root:

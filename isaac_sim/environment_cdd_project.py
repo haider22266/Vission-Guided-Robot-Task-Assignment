@@ -26,6 +26,7 @@ def arguments():
     p.add_argument('--fast-cleanup',action='store_true',help='Claim the first feasible checked task instead of exhaustively ranking grasp candidates')
     p.add_argument('--small-demo',action='store_true',help='Separate small-prop scene; exclude original floor clutter before physics starts')
     p.add_argument('--small-task-count',type=int,choices=(5,10,15,20),default=20,help='Number of spaced boxes in the separate small demo')
+    p.add_argument('--small-layout',choices=('grouped','pile','batched'),default='grouped',help='All props visible in groups or one pile; batched is the earlier release policy')
     p.add_argument('--efficientnet-model',type=Path,default=Path(__file__).resolve().parents[1]/'models/cdd/efficientnet_cdd.keras')
     p.add_argument('--classifier-python',default=sys.executable,help='Python environment containing TensorFlow')
     p.add_argument('--classifier-wsl',action='store_true')
@@ -157,7 +158,7 @@ def main():
         from warehouse_environment_jobs import existing_prop_jobs
         if args.small_demo:
             from small_cleanup_scene import prepare_small_cleanup
-            environment_jobs=prepare_small_cleanup(stage,args.small_task_count)
+            environment_jobs=prepare_small_cleanup(stage,args.small_task_count,args.small_layout)
         else:
             environment_jobs=existing_prop_jobs(stage)
         from floor_cleanup import floor_groups,CleanupQueue,FairTripGate,RouteReservations,beam_fits_support,route_prefix,upper_face,supported_centres,TrafficDeferred,idle_clear_due
@@ -169,7 +170,7 @@ def main():
             floor_prims=[p for p in floor_prims if p.GetName().startswith('Debris_Demo_')]
         cleanup_groups,unknown_components=floor_groups(floor_prims)
         cleanup=CleanupQueue(cleanup_groups,unknown_components) if args.tasks_per_robot==0 else None
-        if args.small_demo and cleanup is not None:
+        if args.small_demo and args.small_layout=='batched' and cleanup is not None:
             for index,key in enumerate(sorted(cleanup.items)):
                 if index>=5:cleanup.items[key]['state']='waiting'
         cleanup_by_id={g['id']:g for g in cleanup_groups}
@@ -208,7 +209,8 @@ def main():
         ui_cleanup_summary=None
         if not args.headless:
             import omni.ui as ui
-            task_window=ui.Window('Existing warehouse object tasks',width=700,height=370)
+            title=('Carton tasks | five groups' if args.small_demo and args.small_layout=='grouped' else 'Existing warehouse object tasks')
+            task_window=ui.Window(title,width=700,height=370)
             with task_window.frame:
                 with ui.VStack(spacing=8):
                     ui_cleanup_summary=ui.Label('Continuous floor cleanup | verified grasp and rack placement' if cleanup is not None
@@ -1188,7 +1190,7 @@ def main():
                     r['selected_props']=[]
                 event(r,'reserve_existing_environment_object')
                 available=available_cleanup(r) if cleanup is not None else []
-                if cleanup is not None and not args.fast_cleanup:
+                if cleanup is not None and (not args.fast_cleanup or (args.small_demo and args.small_layout=='grouped')):
                     own={str(group[0].GetPath()) for group in candidate_groups[r['id']]}
                     preferred=[key for key in available if key in own]
                     available=preferred or available
@@ -1482,7 +1484,7 @@ def main():
             # Let PhysX apply the source/temporary collider handoff before
             # exposing the object to another robot's raycast/grasp preflight.
             for _ in range(3):yield
-            cleanup.recovered(r['cleanup_id'],error,speed,True)
+            cleanup.recovered(r['cleanup_id'],error,speed,True,traffic_only=r.get('recovery_is_traffic',False))
             reserved.difference_update(r['selected_props'])
             r.setdefault('recoveries',[]).append({'time':clock[0]/60,'object':r['cleanup_id'],
                 'pose_handoff_error_m':error,'settled_speed_m_s':speed,'floor_height_m':float(low[2])})
@@ -1555,6 +1557,7 @@ def main():
                     if cleanup is None:return
                     traffic_deferred=r.pop('traffic_deferred',False)
                     if r.get('cleanup_manipulated',False):
+                        r['recovery_is_traffic']=traffic_deferred
                         recovered=yield from recover_floor_payload(r)
                         if not recovered:
                             # A quarantined load need not retire an empty,
@@ -1618,7 +1621,7 @@ def main():
                     retreat=current[:2]-.35*np.array([math.cos(r['yaw']),math.sin(r['yaw'])])
                     yield from navigate(r,retreat)
                     r.update(item=None,originals=[],carrying=False,destination_shelf=None)
-                    if not args.fast_cleanup or (args.small_demo and args.small_task_count>5):
+                    if not args.fast_cleanup or (args.small_demo and args.small_layout=='batched' and args.small_task_count>5):
                         event(r,'return_to_clear_front_apron')
                         yield from navigate(r,r['home'][:2],yaw=0.)
                 except Exception as exc:
@@ -1651,7 +1654,7 @@ def main():
         camera_unchanged=True
         cleanup_stop_reason=None
         while workers and clock[0]/60 < args.duration and app.is_running():
-            if args.small_demo and cleanup is not None:
+            if args.small_demo and args.small_layout=='batched' and cleanup is not None:
                 wave=[key for key,item in sorted(cleanup.items.items()) if item['state']=='waiting'][:5]
                 if wave and not any(item['state'] in ('pending','assigned') for item in cleanup.items.values()) and all(
                         not r.get('carrying') and r.get('item') is None and not r.get('nav_active')
@@ -1739,6 +1742,7 @@ def main():
 
         report=dict(scene=str(args.scene.resolve()),mode='mobile planar-drive physics; assisted grasp',
                     scenario='%d small isolated boxes'%args.small_task_count if args.small_demo else 'original disaster floor props',
+                    small_layout=args.small_layout if args.small_demo else None,
                     reserved_original_paths=sorted(reserved),requested_max_tasks_per_robot=args.tasks_per_robot,
                     simulated_seconds=round(clock[0]/60,3),camera='fixed 28 mm perspective',camera_unchanged=bool(camera_unchanged),
                     execution='concurrent shared physics frames',robots=[])
